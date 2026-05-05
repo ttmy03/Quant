@@ -237,6 +237,17 @@ def test_dashboard_includes_visual_chart_canvases(tmp_path) -> None:
     assert 'id="positions-table"' in response.text
     assert 'id="daily-report"' in response.text
     assert 'id="alerts"' in response.text
+    assert 'id="quick-start"' in response.text
+    assert 'id="safety-section"' in response.text
+    assert 'id="portfolio-section"' in response.text
+    assert 'id="analysis-section"' in response.text
+    assert 'id="actions-section"' in response.text
+    assert 'id="history-section"' in response.text
+    assert "Schritt 1" in response.text
+    assert "Sicherheit & Freigabe" in response.text
+    assert "Portfolio Überblick" in response.text
+    assert "Dry-Run Aktionen" in response.text
+    assert "Not-Aus aktivieren" in response.text
     assert "<pre" not in response.text
     assert "renderStatusList" in response.text
     assert "renderDetailGrid" in response.text

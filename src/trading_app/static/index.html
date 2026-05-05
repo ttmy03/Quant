@@ -60,9 +60,13 @@
         min-width: 0;
       }
       h2 {
-        margin: 0 0 12px;
+        margin: 0 0 8px;
+        font-size: 22px;
+        letter-spacing: -0.02em;
+      }
+      h3 {
         font-size: 16px;
-        letter-spacing: 0;
+        margin: 0 0 8px;
       }
       button,
       input,
@@ -264,6 +268,116 @@
       .warn {
         color: var(--warn);
       }
+      .eyebrow {
+        color: var(--accent-dark);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        margin: 0 0 6px;
+        text-transform: uppercase;
+      }
+      .section-copy,
+      .helper-text {
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.45;
+        margin: 0 0 14px;
+      }
+      .section-group {
+        display: grid;
+        gap: 14px;
+      }
+      .section-header,
+      .overview-panel {
+        align-items: flex-start;
+        display: flex;
+        gap: 16px;
+        justify-content: space-between;
+      }
+      .overview-panel {
+        background: linear-gradient(135deg, #ffffff, #eefdfa);
+      }
+      .guide-grid,
+      .group-grid,
+      .action-grid {
+        display: grid;
+        gap: 12px;
+      }
+      .guide-grid {
+        grid-template-columns: repeat(4, minmax(150px, 1fr));
+        min-width: 55%;
+      }
+      .guide-card {
+        background: #ffffff;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 12px;
+      }
+      .guide-card span {
+        align-items: center;
+        background: var(--accent);
+        border-radius: 999px;
+        color: #ffffff;
+        display: inline-flex;
+        font-size: 12px;
+        font-weight: 800;
+        height: 24px;
+        justify-content: center;
+        margin-bottom: 8px;
+        width: 24px;
+      }
+      .guide-card strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+      .guide-card p {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.35;
+        margin: 0;
+      }
+      .group-grid {
+        grid-template-columns: repeat(12, 1fr);
+      }
+      .action-grid {
+        grid-template-columns: repeat(4, minmax(140px, max-content));
+        margin-bottom: 14px;
+      }
+      .top-actions {
+        align-content: start;
+        grid-template-columns: repeat(3, max-content);
+        margin-bottom: 0;
+      }
+      .compact-actions {
+        grid-template-columns: repeat(4, minmax(130px, 1fr));
+      }
+      .input-strip {
+        align-items: center;
+        background: #ffffff;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        display: grid;
+        gap: 10px;
+        grid-template-columns: max-content minmax(220px, 360px);
+        padding: 12px;
+      }
+      .input-strip label {
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+      }
+      .emphasis-card {
+        border-color: #99f6e4;
+        box-shadow: 0 10px 28px rgba(15, 118, 110, 0.08);
+      }
+      .danger-button {
+        background: var(--danger);
+      }
+      details summary {
+        cursor: pointer;
+        font-weight: 700;
+        margin-bottom: 12px;
+      }
       @media (max-width: 900px) {
         header {
           align-items: flex-start;
@@ -272,7 +386,13 @@
         main,
         .form-grid,
         .metric-grid,
-        .chart-grid {
+        .chart-grid,
+        .guide-grid,
+        .group-grid,
+        .action-grid,
+        .top-actions,
+        .compact-actions,
+        .input-strip {
           grid-template-columns: 1fr;
         }
         .span-4,
@@ -283,6 +403,10 @@
         }
         .toolbar {
           grid-template-columns: 1fr;
+        }
+        .section-header,
+        .overview-panel {
+          flex-direction: column;
         }
       }
     </style>
@@ -302,152 +426,241 @@
     </header>
 
     <main>
-      <section class="span-8">
-        <h2>Portfolio und Status</h2>
-        <div class="toolbar">
-          <button id="refresh">Aktualisieren</button>
-          <button class="secondary" id="run-sim">Monte Carlo</button>
-          <button class="secondary" id="run-improve">Verbessern</button>
+      <section class="span-12 overview-panel" id="quick-start">
+        <div>
+          <p class="eyebrow">Einfacher Ablauf</p>
+          <h2>Was soll ich tun?</h2>
+          <p class="section-copy">Das Dashboard ist jetzt in Schritte aufgeteilt: erst Sicherheit prüfen, dann Konto ansehen, danach Simulationen oder Dry-Run Aktionen starten.</p>
+        </div>
+        <div class="guide-grid">
+          <div class="guide-card"><span>1</span><strong>Sicherheit prüfen</strong><p>Dry Run, Paper Only und Kill-Switch zeigen, ob Aktionen sicher blockiert sind.</p></div>
+          <div class="guide-card"><span>2</span><strong>Portfolio ansehen</strong><p>Kontostatus, Positionen und letzte Preise auf einen Blick.</p></div>
+          <div class="guide-card"><span>3</span><strong>Analysen starten</strong><p>Monte Carlo, Backtest oder Strategie-Verbesserung ohne Live-Geld.</p></div>
+          <div class="guide-card"><span>4</span><strong>Verlauf kontrollieren</strong><p>Orders, Alerts und Tagesreport zeigen, was passiert ist.</p></div>
+        </div>
+      </section>
+
+      <div class="section-group span-12" id="safety-section">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Schritt 1</p>
+            <h2>Sicherheit & Freigabe</h2>
+            <p class="section-copy">Hier sieht man sofort, ob Trading erlaubt, pausiert oder per Not-Aus blockiert ist. Für diese App bleiben echte Orders deaktiviert.</p>
+          </div>
+          <button id="refresh">Alles aktualisieren</button>
+        </div>
+        <div class="group-grid">
+          <section class="span-4 emphasis-card">
+            <h3>Sicherheitsmodus</h3>
+            <p class="helper-text">Muss grün bleiben, bevor du überhaupt über echte Paper-Automation nachdenkst.</p>
+            <div class="detail-grid" id="config">Laedt...</div>
+          </section>
+
+          <section class="span-8" id="trading-control-card">
+            <h3>Trading Control</h3>
+            <p class="helper-text">Pause ist temporär. Kill-Switch ist der harte Not-Aus und blockiert Scheduler sowie Orders.</p>
+            <div class="action-grid compact-actions">
+              <button class="danger-button" id="enable-kill-switch">Not-Aus aktivieren</button>
+              <button class="secondary" id="disable-kill-switch">Not-Aus freigeben</button>
+              <button class="secondary" id="pause-trading">Trading pausieren</button>
+              <button class="secondary" id="resume-trading">Trading fortsetzen</button>
+            </div>
+            <div class="detail-grid" id="trading-control">Laedt...</div>
+          </section>
+        </div>
+      </div>
+
+      <div class="section-group span-12" id="portfolio-section">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Schritt 2</p>
+            <h2>Portfolio Überblick</h2>
+            <p class="section-copy">Kontostatus, Paper-Endpunkt, beobachtete Symbole und vorhandene Positionen.</p>
+          </div>
+        </div>
+        <div class="group-grid">
+          <section class="span-12">
+            <h3>Konto & Positionen</h3>
+            <div class="metric-grid" id="metrics"></div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Symbol</th>
+                  <th>Menge</th>
+                  <th>Marktwert</th>
+                  <th>U/PnL</th>
+                </tr>
+              </thead>
+              <tbody id="positions-table"></tbody>
+            </table>
+          </section>
+        </div>
+      </div>
+
+      <div class="section-group span-12" id="analysis-section">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Schritt 3</p>
+            <h2>Analysen starten</h2>
+            <p class="section-copy">Diese Aktionen sind Research-Funktionen. Sie helfen bei Entscheidungen, senden aber keine echten Orders.</p>
+          </div>
+          <div class="action-grid top-actions">
+            <button class="secondary" id="run-sim">Monte Carlo starten</button>
+            <button class="secondary" id="run-backtest">Backtest starten</button>
+            <button class="secondary" id="run-improve">Strategie verbessern</button>
+          </div>
+        </div>
+        <div class="input-strip">
+          <label for="backtest-data-source">Backtest Datenquelle</label>
           <select id="backtest-data-source" aria-label="Backtest Datenquelle">
-            <option value="auto">Daten: Auto</option>
-            <option value="alpaca">Daten: Alpaca</option>
-            <option value="synthetic">Daten: Synthetic</option>
+            <option value="auto">Auto: Alpaca, sonst Fallback</option>
+            <option value="alpaca">Nur Alpaca versuchen</option>
+            <option value="synthetic">Nur synthetische Daten</option>
           </select>
-          <button class="secondary" id="run-backtest">Backtest</button>
         </div>
-        <div class="metric-grid" id="metrics"></div>
-        <table>
-          <thead>
-            <tr>
-              <th>Symbol</th>
-              <th>Menge</th>
-              <th>Marktwert</th>
-              <th>U/PnL</th>
-            </tr>
-          </thead>
-          <tbody id="positions-table"></tbody>
-        </table>
-      </section>
+        <div class="group-grid">
+          <section class="span-6">
+            <h3>Monte Carlo Risiko</h3>
+            <p class="helper-text">Simuliert mögliche Portfolio-Pfade und zeigt Risiko-Spannen.</p>
+            <div class="metric-grid" id="simulation-metrics"></div>
+            <div class="chart-grid">
+              <div class="chart-card">
+                <h3>Fan Chart: P05 / Median / P95</h3>
+                <canvas id="monte-carlo-fan-chart" width="720" height="260" aria-label="Monte Carlo Fan Chart"></canvas>
+              </div>
+              <div class="chart-card">
+                <h3>Endwert-Verteilung</h3>
+                <canvas id="monte-carlo-histogram" width="360" height="260" aria-label="Monte Carlo Histogramm"></canvas>
+              </div>
+            </div>
+            <div id="simulation" class="status-box muted">Noch keine Simulation.</div>
+          </section>
 
-      <section class="span-4">
-        <h2>Sicherheitsmodus</h2>
-        <div class="detail-grid" id="config">Laedt...</div>
-      </section>
-
-      <section class="span-4" id="trading-control-card">
-        <h2>Trading Control</h2>
-        <div class="toolbar">
-          <button class="secondary" id="enable-kill-switch">Kill Switch</button>
-          <button class="secondary" id="disable-kill-switch">Freigeben</button>
-          <button class="secondary" id="pause-trading">Pause</button>
-          <button class="secondary" id="resume-trading">Resume</button>
-          <button id="run-scheduler-once">Scheduler</button>
+          <section class="span-6">
+            <h3>Backtest Ergebnis</h3>
+            <p class="helper-text">Testet die Strategie auf historischen oder synthetischen Kursdaten.</p>
+            <div class="metric-grid" id="backtest-metrics"></div>
+            <div class="chart-card">
+              <h3>Equity Curve und Preisverlauf</h3>
+              <canvas id="backtest-equity-chart" width="720" height="260" aria-label="Backtest Equity Chart"></canvas>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Zeit</th>
+                  <th>Symbol</th>
+                  <th>Seite</th>
+                  <th>Notional</th>
+                </tr>
+              </thead>
+              <tbody id="backtest-trades"></tbody>
+            </table>
+            <div id="backtest-equity" class="status-box muted">Noch kein Backtest.</div>
+          </section>
         </div>
-        <div class="detail-grid" id="trading-control">Laedt...</div>
-        <div id="scheduler-result" class="status-box muted">Noch kein Scheduler-Lauf.</div>
-      </section>
+      </div>
 
-      <section class="span-6">
-        <h2>Dry-Run Order</h2>
-        <form class="form-grid" id="order-form">
-          <input name="symbol" value="AAPL" aria-label="Symbol" />
-          <select name="side" aria-label="Seite">
-            <option value="buy">buy</option>
-            <option value="sell">sell</option>
-          </select>
-          <input name="qty" type="number" min="0.001" step="0.001" value="1" aria-label="Menge" />
-          <select name="order_type" aria-label="Ordertyp">
-            <option value="market">market</option>
-            <option value="limit">limit</option>
-          </select>
-          <button type="submit">Senden</button>
-        </form>
-        <div id="order-result" class="status-box muted">Noch keine Order.</div>
-      </section>
-
-      <section class="span-6">
-        <h2>Strategie</h2>
-        <div id="strategy" class="status-list">Laedt...</div>
-      </section>
-
-      <section class="span-6">
-        <h2>Monte Carlo Zusammenfassung</h2>
-        <div class="metric-grid" id="simulation-metrics"></div>
-        <div class="chart-grid">
-          <div class="chart-card">
-            <h3>Fan Chart: P05 / Median / P95</h3>
-            <canvas id="monte-carlo-fan-chart" width="720" height="260" aria-label="Monte Carlo Fan Chart"></canvas>
+      <div class="section-group span-12" id="actions-section">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Schritt 4</p>
+            <h2>Dry-Run Aktionen</h2>
+            <p class="section-copy">Hier kannst du einen Strategiezyklus oder eine Testorder auslösen. Beides bleibt im Dry-Run/Paper-Sicherheitsrahmen.</p>
           </div>
-          <div class="chart-card">
-            <h3>Terminal Value Histogramm</h3>
-            <canvas id="monte-carlo-histogram" width="360" height="260" aria-label="Monte Carlo Histogramm"></canvas>
+          <button id="run-scheduler-once">Scheduler einmal starten</button>
+        </div>
+        <div class="group-grid">
+          <section class="span-6">
+            <h3>Scheduler Ergebnis</h3>
+            <p class="helper-text">Ein manueller Zyklus berechnet Signale und protokolliert mögliche Dry-Run Orders.</p>
+            <div id="scheduler-result" class="status-box muted">Noch kein Scheduler-Lauf.</div>
+          </section>
+
+          <section class="span-6">
+            <h3>Manuelle Dry-Run Order</h3>
+            <p class="helper-text">Zum Testen des Order- und Risk-Flows. Keine echte Börsenorder.</p>
+            <form class="form-grid" id="order-form">
+              <input name="symbol" value="AAPL" aria-label="Symbol" />
+              <select name="side" aria-label="Seite">
+                <option value="buy">Kaufen</option>
+                <option value="sell">Verkaufen</option>
+              </select>
+              <input name="qty" type="number" min="0.001" step="0.001" value="1" aria-label="Menge" />
+              <select name="order_type" aria-label="Ordertyp">
+                <option value="market">Market</option>
+                <option value="limit">Limit</option>
+              </select>
+              <button type="submit">Testorder senden</button>
+            </form>
+            <div id="order-result" class="status-box muted">Noch keine Order.</div>
+          </section>
+        </div>
+      </div>
+
+      <div class="section-group span-12" id="history-section">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Schritt 5</p>
+            <h2>Verlauf & Hinweise</h2>
+            <p class="section-copy">Alles, was passiert ist: Strategieparameter, Alerts, Tagesreport, Audit Events und Order-Historie.</p>
           </div>
+          <button class="secondary" id="load-daily-report">Tagesreport aktualisieren</button>
         </div>
-        <div id="simulation" class="status-box muted">Noch keine Simulation.</div>
-      </section>
+        <div class="group-grid">
+          <section class="span-4">
+            <h3>Strategie</h3>
+            <p class="helper-text">Aktuell genutzte Parameter und letztes Demo-Signal.</p>
+            <div id="strategy" class="status-list">Laedt...</div>
+          </section>
 
-      <section class="span-6">
-        <h2>Backtest Zusammenfassung</h2>
-        <div class="metric-grid" id="backtest-metrics"></div>
-        <div class="chart-card">
-          <h3>Equity Curve und Preisverlauf</h3>
-          <canvas id="backtest-equity-chart" width="720" height="260" aria-label="Backtest Equity Chart"></canvas>
+          <section class="span-4">
+            <h3>Alerts</h3>
+            <p class="helper-text">Wichtige Warnungen wie aktiver Kill-Switch oder blockierte Aktionen.</p>
+            <div id="alerts" class="status-list muted">Keine Alerts geladen.</div>
+          </section>
+
+          <section class="span-4">
+            <h3>Daily Report</h3>
+            <p class="helper-text">Kurze Tageszusammenfassung für Orders, Backtests, Simulationen und Safety.</p>
+            <div id="daily-report" class="status-list muted">Noch kein Report.</div>
+          </section>
+
+          <section class="span-6 collapsible-card">
+            <details>
+              <summary>Audit Events anzeigen</summary>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Zeit</th>
+                    <th>Typ</th>
+                    <th>Nachricht</th>
+                  </tr>
+                </thead>
+                <tbody id="audit"></tbody>
+              </table>
+            </details>
+          </section>
+
+          <section class="span-6 collapsible-card">
+            <details open>
+              <summary>Orders anzeigen</summary>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Zeit</th>
+                    <th>Symbol</th>
+                    <th>Seite</th>
+                    <th>Menge</th>
+                    <th>Status</th>
+                    <th>Dry Run</th>
+                  </tr>
+                </thead>
+                <tbody id="orders"></tbody>
+              </table>
+            </details>
+          </section>
         </div>
-        <table>
-          <thead>
-            <tr>
-              <th>Zeit</th>
-              <th>Symbol</th>
-              <th>Seite</th>
-              <th>Notional</th>
-            </tr>
-          </thead>
-          <tbody id="backtest-trades"></tbody>
-        </table>
-        <div id="backtest-equity" class="status-box muted">Noch kein Backtest.</div>
-      </section>
-
-      <section class="span-6">
-        <h2>Audit Events</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Zeit</th>
-              <th>Typ</th>
-              <th>Nachricht</th>
-            </tr>
-          </thead>
-          <tbody id="audit"></tbody>
-        </table>
-      </section>
-
-      <section class="span-6">
-        <h2>Daily Report</h2>
-        <button class="secondary" id="load-daily-report">Aktualisieren</button>
-        <div id="daily-report" class="status-list muted">Noch kein Report.</div>
-      </section>
-
-      <section class="span-6">
-        <h2>Alerts</h2>
-        <div id="alerts" class="status-list muted">Keine Alerts geladen.</div>
-      </section>
-
-      <section class="span-12">
-        <h2>Orders</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Zeit</th>
-              <th>Symbol</th>
-              <th>Seite</th>
-              <th>Menge</th>
-              <th>Status</th>
-              <th>Dry Run</th>
-            </tr>
-          </thead>
-          <tbody id="orders"></tbody>
-        </table>
-      </section>
+      </div>
     </main>
 
     <script>
@@ -456,6 +669,12 @@
       const pct = (value) => (Number.isFinite(Number(value)) ? `${(Number(value) * 100).toFixed(2)}%` : "-");
       const yesNo = (value) => (value ? "Ja" : "Nein");
       const safe = (value) => value ?? "-";
+      const dateTime = (value) => {
+        if (!value) return "-";
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return value;
+        return date.toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" });
+      };
 
       function badge(label, state = "ok") {
         return `<span class="badge ${state}">${label}</span>`;
@@ -682,9 +901,9 @@
         renderDetailGrid("#trading-control", [
           ["Status", control.can_trade ? badge("Freigegeben", "ok") : badge("Blockiert", "danger")],
           ["Kill-Switch", control.kill_switch_active ? badge("Aktiv", "danger") : badge("Aus", "ok")],
-          ["Pause", control.paused ? badge("Pausiert", "warn") : badge("Läuft", "ok")],
+          ["Pause", control.paused ? badge("Pausiert", "warn") : badge("Nicht pausiert", "ok")],
           ["Grund", safe(control.reason) || "-"],
-          ["Aktualisiert", safe(control.updated_at)],
+          ["Aktualisiert", dateTime(control.updated_at)],
           ["Aktor", safe(control.updated_by)],
         ]);
       }
@@ -707,7 +926,7 @@
         document.querySelector("#orders").innerHTML = orders
           .map(
             (order) => `<tr>
-              <td>${order.created_at}</td>
+              <td>${dateTime(order.created_at)}</td>
               <td>${order.symbol}</td>
               <td>${order.side}</td>
               <td>${order.qty}</td>
@@ -720,7 +939,7 @@
 
       function renderAudit(events) {
         document.querySelector("#audit").innerHTML = events
-          .map((event) => `<tr><td>${event.created_at}</td><td>${event.event_type}</td><td>${event.message}</td></tr>`)
+          .map((event) => `<tr><td>${dateTime(event.created_at)}</td><td>${event.event_type}</td><td>${event.message}</td></tr>`)
           .join("");
       }
 
