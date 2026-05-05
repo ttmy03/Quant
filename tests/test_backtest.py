@@ -108,9 +108,32 @@ def test_portfolio_backtest_limits_positions_to_highest_confidence_signals() -> 
     )
 
     bought_symbols = [trade.symbol for trade in result.trades if trade.side == "buy"]
-    assert len(set(bought_symbols)) == 2
-    assert "FAST" in bought_symbols
+    assert "FAST" in bought_symbols[:2]
     assert max(point.position_qty for point in result.equity_curve) <= 2
+
+
+def test_portfolio_backtest_ranks_strong_setup_above_alphabetical_weak_setup() -> None:
+    result = run_portfolio_backtest(
+        {
+            "ALPHAWEAK": bars_from_prices([100, 100, 100, 100, 100.3, 100.5, 100.7, 100.9], "ALPHAWEAK"),
+            "ZSTRONG": bars_from_prices([100, 100, 101, 102, 103, 104, 106, 108], "ZSTRONG"),
+        },
+        StrategyParams(
+            short_window=2,
+            long_window=4,
+            min_crossover_pct=0.001,
+            momentum_window=3,
+            min_momentum_pct=0.001,
+            min_buy_score=0.75,
+            max_positions=1,
+        ),
+        initial_cash=10_000,
+        trade_notional=1_000,
+    )
+
+    bought_symbols = [trade.symbol for trade in result.trades if trade.side == "buy"]
+    assert bought_symbols[0] == "ZSTRONG"
+    assert max(point.position_qty for point in result.equity_curve) <= 1
 
 
 def test_storage_roundtrips_backtest_result(tmp_path) -> None:
@@ -166,3 +189,54 @@ def test_portfolio_backtest_reports_trade_quality_diagnostics() -> None:
     assert result.metrics.avg_loser is not None
     assert result.metrics.per_symbol_pnl
     assert set(result.metrics.per_symbol_pnl).issubset({"WIN", "LOSE"})
+
+
+
+def test_portfolio_backtest_executes_stop_loss_at_stop_level_not_bad_close() -> None:
+    result = run_portfolio_backtest(
+        {
+            "GAP": bars_from_prices([100, 100, 100, 100, 110, 111, 80], "GAP"),
+        },
+        StrategyParams(
+            short_window=2,
+            long_window=4,
+            min_crossover_pct=0.001,
+            stop_loss_pct=0.05,
+            trailing_stop_pct=0.50,
+            max_positions=1,
+        ),
+        initial_cash=10_000,
+        trade_notional=1_000,
+    )
+
+    stop_trades = [trade for trade in result.trades if trade.side == "sell" and "stop" in trade.reason.lower()]
+    assert stop_trades
+    assert stop_trades[-1].price > 80
+    assert stop_trades[-1].price < 111
+    assert result.metrics.max_drawdown < 0.03
+
+
+def test_portfolio_backtest_takes_profit_at_configured_r_multiple() -> None:
+    result = run_portfolio_backtest(
+        {
+            "TP": bars_from_prices([100, 100, 100, 100, 110, 111, 116, 117], "TP"),
+        },
+        StrategyParams(
+            short_window=2,
+            long_window=4,
+            min_crossover_pct=0.001,
+            stop_loss_pct=0.05,
+            trailing_stop_pct=0.50,
+            take_profit_r_multiple=1.0,
+            max_positions=1,
+        ),
+        initial_cash=10_000,
+        trade_notional=1_000,
+    )
+
+    sell_trades = [trade for trade in result.trades if trade.side == "sell"]
+    assert sell_trades
+    assert "take profit" in sell_trades[-1].reason.lower()
+    assert sell_trades[-1].price > result.trades[0].price
+    assert result.metrics.profit_factor is not None
+    assert result.metrics.profit_factor > 0

@@ -117,3 +117,14 @@ def test_strategy_v2_buy_reason_mentions_vwap_atr_and_relative_strength() -> Non
     assert "vwap" in signal.reason.lower()
     assert "atr" in signal.reason.lower()
     assert "relative strength" in signal.reason.lower()
+
+
+def test_strategy_v2_default_buy_score_ignores_weak_intraday_edges() -> None:
+    strategy = MovingAverageCrossoverStrategy(
+        StrategyParams(short_window=2, long_window=4, min_crossover_pct=0.001, momentum_window=3, min_momentum_pct=0.001)
+    )
+
+    signal = strategy.generate_signal("MSFT", bars_from_prices([100, 100, 100, 100, 100.3, 100.5, 100.7, 100.9]))
+
+    assert signal.action == "HOLD"
+    assert "no strong risk-adjusted long edge" in signal.reason.lower()

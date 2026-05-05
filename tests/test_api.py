@@ -353,6 +353,7 @@ def test_dashboard_includes_visual_chart_canvases(tmp_path) -> None:
     assert 'id="backtest-timeframe"' in response.text
     assert "Backtest Zeitraum" in response.text
     assert "Backtest Timeframe" in response.text
+    assert "1Day ist kein Intraday-Backtest" in response.text
     assert "Profit Factor" in response.text
     assert "Anfangswert" in response.text
     assert "Endwert" in response.text

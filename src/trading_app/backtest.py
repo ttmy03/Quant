@@ -16,6 +16,44 @@ from trading_app.schemas import (
 from trading_app.strategy import MovingAverageCrossoverStrategy, StrategyParams
 
 
+def _average_true_range(bars: Sequence[Bar], period: int) -> float:
+    """Return ATR using only bars that are known before the current decision bar."""
+    if len(bars) < 2:
+        return 0.0
+    window = list(bars)[-max(2, period) :]
+    ranges: list[float] = []
+    for index in range(1, len(window)):
+        current = window[index]
+        previous_close = float(window[index - 1].close)
+        ranges.append(
+            max(
+                float(current.high) - float(current.low),
+                abs(float(current.high) - previous_close),
+                abs(float(current.low) - previous_close),
+            )
+        )
+    return sum(ranges) / len(ranges) if ranges else 0.0
+
+
+def _long_exit_levels(entry: float, peak: float, prior_bars: Sequence[Bar], params: StrategyParams) -> tuple[float, float, float]:
+    """Compute fixed/ATR hybrid stop, trailing stop, and take-profit levels for a long."""
+    entry = max(float(entry), 1e-9)
+    peak = max(float(peak), entry)
+    atr = _average_true_range(prior_bars, params.atr_period)
+    fixed_stop_distance = entry * params.stop_loss_pct
+    fixed_trailing_distance = peak * params.trailing_stop_pct
+    if atr > 0:
+        stop_distance = min(fixed_stop_distance, atr * params.atr_stop_multiplier)
+        trailing_distance = min(fixed_trailing_distance, atr * params.atr_trailing_multiplier)
+    else:
+        stop_distance = fixed_stop_distance
+        trailing_distance = fixed_trailing_distance
+    stop_price = entry - max(stop_distance, entry * 0.0025)
+    trailing_stop_price = peak - max(trailing_distance, peak * 0.0025)
+    take_profit_price = entry + max(stop_distance, entry * 0.0025) * params.take_profit_r_multiple
+    return stop_price, trailing_stop_price, take_profit_price
+
+
 def _trade_quality_metrics(trades: Sequence[BacktestTrade]) -> dict[str, object]:
     open_notional: dict[str, float] = {}
     winners: list[float] = []
@@ -206,10 +244,10 @@ def run_portfolio_backtest(
     equity_curve: list[BacktestEquityPoint] = []
     last_signal = Signal(symbol="WATCHLIST_PORTFOLIO", action="HOLD", confidence=0.0, reason="portfolio backtest initialized")
 
-    def close_position(symbol: str, bar: Bar, reason: str) -> None:
+    def close_position(symbol: str, bar: Bar, reason: str, *, execution_price: float | None = None) -> None:
         nonlocal cash, winning_round_trips, closed_round_trips
         qty = positions.get(symbol, 0.0)
-        price = float(bar.close)
+        price = float(execution_price if execution_price is not None else bar.close)
         if qty <= 0 or price <= 0:
             return
         notional = qty * price
@@ -261,21 +299,38 @@ def run_portfolio_backtest(
             if held_qty > 0:
                 entry = max(entry_price.get(symbol, price), 1e-9)
                 peak = max(peak_price_since_entry.get(symbol, price), price)
-                loss_from_entry = (price / entry) - 1
-                trailing_drawdown = (price / peak) - 1
-                if loss_from_entry <= -params.stop_loss_pct:
+                stop_price, trailing_stop_price, take_profit_price = _long_exit_levels(
+                    entry,
+                    peak,
+                    history_by_symbol[symbol][:-1],
+                    params,
+                )
+                if float(bar.low) <= stop_price:
                     close_position(
                         symbol,
                         bar,
-                        f"portfolio risk exit: stop loss hit ({loss_from_entry:.2%}); {signal.reason}",
+                        f"portfolio risk exit: ATR/fixed stop hit at stop level ({(stop_price / entry) - 1:.2%}); {signal.reason}",
+                        execution_price=stop_price,
                     )
+                    latest_price[symbol] = stop_price
                     continue
-                if trailing_drawdown <= -params.trailing_stop_pct:
+                if float(bar.low) <= trailing_stop_price:
                     close_position(
                         symbol,
                         bar,
-                        f"portfolio risk exit: trailing stop hit ({trailing_drawdown:.2%}); {signal.reason}",
+                        f"portfolio risk exit: ATR/fixed trailing stop hit at stop level ({(trailing_stop_price / peak) - 1:.2%}); {signal.reason}",
+                        execution_price=trailing_stop_price,
                     )
+                    latest_price[symbol] = trailing_stop_price
+                    continue
+                if float(bar.high) >= take_profit_price:
+                    close_position(
+                        symbol,
+                        bar,
+                        f"portfolio risk exit: take profit hit at {params.take_profit_r_multiple:.1f}R; {signal.reason}",
+                        execution_price=take_profit_price,
+                    )
+                    latest_price[symbol] = take_profit_price
                     continue
                 if signal.action == "SELL":
                     close_position(symbol, bar, signal.reason)

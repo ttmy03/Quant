@@ -16,7 +16,7 @@ class StrategyParams:
     min_momentum_pct: float = 0.01
     max_volatility_pct: float = 0.045
     max_drawdown_from_peak_pct: float = 0.18
-    min_buy_score: float = 0.75
+    min_buy_score: float = 8.0
     sell_score: float = -0.35
     max_positions: int = 5
     stop_loss_pct: float = 0.08
@@ -25,6 +25,7 @@ class StrategyParams:
     atr_period: int = 14
     atr_stop_multiplier: float = 1.5
     atr_trailing_multiplier: float = 2.0
+    take_profit_r_multiple: float = 2.0
     min_relative_strength_pct: float = 0.0
     base_risk_fraction: float = 0.06
     min_risk_fraction: float = 0.01
@@ -152,7 +153,8 @@ class MovingAverageCrossoverStrategy:
         relative_strength_score = recent_relative_strength / max(abs(self.params.min_momentum_pct), 1e-9)
         raw_score = (0.40 * trend_score) + (0.35 * momentum_score) + (0.25 * relative_strength_score) - volatility_penalty - drawdown_penalty - vwap_penalty
 
-        confidence = max(0.0, min(abs(raw_score) / 3.0, 1.0))
+        confidence_scale_denominator = max(10.0, abs(self.params.min_buy_score), abs(self.params.sell_score), 1e-9)
+        confidence = max(0.0, min(abs(raw_score) / (abs(raw_score) + confidence_scale_denominator), 1.0))
         risk_notes = (
             f"score={raw_score:.2f}, crossover={crossover_pct:.2%}, momentum={recent_momentum:.2%}, "
             f"relative strength={recent_relative_strength:.2%}, VWAP={vwap:.2f}, ATR={atr:.2f} ({atr_pct:.2%}), "
