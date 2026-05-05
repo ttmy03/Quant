@@ -56,6 +56,26 @@ def simulate_portfolio_paths(
     ruin_value = initial_value * ruin_threshold
     probability_of_ruin = float((values.min(axis=1) <= ruin_value).mean())
 
+    chart_values = np.concatenate([np.full((paths, 1), initial_value), values], axis=1)
+    fan_chart = [
+        {
+            "day": int(day),
+            "p05": round(float(np.percentile(chart_values[:, day], 5)), 4),
+            "p50": round(float(np.percentile(chart_values[:, day], 50)), 4),
+            "p95": round(float(np.percentile(chart_values[:, day], 95)), 4),
+        }
+        for day in range(horizon_days + 1)
+    ]
+    histogram_counts, histogram_edges = np.histogram(terminal_values, bins=20)
+    terminal_value_histogram = [
+        {
+            "lower": round(float(histogram_edges[index]), 4),
+            "upper": round(float(histogram_edges[index + 1]), 4),
+            "count": int(count),
+        }
+        for index, count in enumerate(histogram_counts)
+    ]
+
     return MonteCarloSummary(
         seed=seed,
         paths=paths,
@@ -70,4 +90,6 @@ def simulate_portfolio_paths(
         max_drawdown_p95=round(float(np.percentile(max_drawdowns, 95)), 6),
         probability_of_ruin=round(probability_of_ruin, 6),
         mean_terminal_return=round(float(terminal_returns.mean()), 6),
+        fan_chart=fan_chart,
+        terminal_value_histogram=terminal_value_histogram,
     )

@@ -94,6 +94,19 @@ class MonteCarloRequest(BaseModel):
     ruin_threshold: float = Field(default=0.7, gt=0.0, lt=1.0)
 
 
+class MonteCarloFanPoint(BaseModel):
+    day: int
+    p05: float
+    p50: float
+    p95: float
+
+
+class MonteCarloHistogramBucket(BaseModel):
+    lower: float
+    upper: float
+    count: int
+
+
 class MonteCarloSummary(BaseModel):
     seed: int
     paths: int
@@ -108,6 +121,8 @@ class MonteCarloSummary(BaseModel):
     max_drawdown_p95: float
     probability_of_ruin: float
     mean_terminal_return: float
+    fan_chart: list[MonteCarloFanPoint] = Field(default_factory=list)
+    terminal_value_histogram: list[MonteCarloHistogramBucket] = Field(default_factory=list)
 
 
 class BacktestRequest(BaseModel):

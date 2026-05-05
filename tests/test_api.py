@@ -163,3 +163,46 @@ def test_backtest_endpoint_runs_and_persists_when_auth_disabled(tmp_path) -> Non
     assert "id" in payload["backtest"]
     assert latest_response.status_code == 200
     assert latest_response.json()[0]["symbol"] == "AAPL"
+
+
+def test_monte_carlo_endpoint_returns_visualization_series(tmp_path) -> None:
+    settings = Settings(
+        DATABASE_PATH=tmp_path / "test.sqlite3",
+        DEFAULT_SYMBOLS="AAPL",
+        AUTH_ENABLED=False,
+        _env_file=None,
+    )
+    app = create_app(settings=settings, storage=Storage(settings.database_path))
+
+    with ASGITestClient(app) as client:
+        response = client.post(
+            "/api/simulations/monte-carlo",
+            json={"seed": 7, "paths": 200, "horizon_days": 60, "initial_value": 10_000},
+        )
+
+    assert response.status_code == 200
+    summary = response.json()["summary"]
+    fan_chart = summary["fan_chart"]
+    histogram = summary["terminal_value_histogram"]
+
+    assert len(fan_chart) == 61
+    assert fan_chart[0] == {"day": 0, "p05": 10000.0, "p50": 10000.0, "p95": 10000.0}
+    assert fan_chart[-1]["day"] == 60
+    assert fan_chart[-1]["p05"] <= fan_chart[-1]["p50"] <= fan_chart[-1]["p95"]
+    assert len(histogram) == 20
+    assert sum(bucket["count"] for bucket in histogram) == 200
+
+
+def test_dashboard_includes_visual_chart_canvases(tmp_path) -> None:
+    settings = Settings(DATABASE_PATH=tmp_path / "test.sqlite3", AUTH_ENABLED=False, _env_file=None)
+    app = create_app(settings=settings, storage=Storage(settings.database_path))
+
+    with ASGITestClient(app) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert 'id="monte-carlo-fan-chart"' in response.text
+    assert 'id="monte-carlo-histogram"' in response.text
+    assert 'id="backtest-equity-chart"' in response.text
+    assert "renderLineChart" in response.text
+    assert "renderHistogram" in response.text

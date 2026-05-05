@@ -171,6 +171,28 @@
         font-size: 18px;
         margin-top: 4px;
       }
+      .chart-grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: 2fr 1fr;
+        margin-top: 12px;
+      }
+      .chart-card {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px;
+      }
+      .chart-card h3 {
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 600;
+        margin: 0 0 8px;
+      }
+      canvas {
+        display: block;
+        height: 220px;
+        width: 100%;
+      }
       .muted {
         color: var(--muted);
       }
@@ -187,7 +209,8 @@
         }
         main,
         .form-grid,
-        .metric-grid {
+        .metric-grid,
+        .chart-grid {
           grid-template-columns: 1fr;
         }
         .span-4,
@@ -258,12 +281,27 @@
 
       <section class="span-6">
         <h2>Monte Carlo Zusammenfassung</h2>
-        <pre id="simulation">Noch keine Simulation.</pre>
+        <div class="metric-grid" id="simulation-metrics"></div>
+        <div class="chart-grid">
+          <div class="chart-card">
+            <h3>Fan Chart: P05 / Median / P95</h3>
+            <canvas id="monte-carlo-fan-chart" width="720" height="260" aria-label="Monte Carlo Fan Chart"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>Terminal Value Histogramm</h3>
+            <canvas id="monte-carlo-histogram" width="360" height="260" aria-label="Monte Carlo Histogramm"></canvas>
+          </div>
+        </div>
+        <pre id="simulation" class="muted">Noch keine Simulation.</pre>
       </section>
 
       <section class="span-6">
         <h2>Backtest Zusammenfassung</h2>
         <div class="metric-grid" id="backtest-metrics"></div>
+        <div class="chart-card">
+          <h3>Equity Curve und Preisverlauf</h3>
+          <canvas id="backtest-equity-chart" width="720" height="260" aria-label="Backtest Equity Chart"></canvas>
+        </div>
         <table>
           <thead>
             <tr>
@@ -314,6 +352,141 @@
       const json = (value) => JSON.stringify(value, null, 2);
       const money = (value) => (Number.isFinite(Number(value)) ? Number(value).toFixed(2) : "-");
       const pct = (value) => (Number.isFinite(Number(value)) ? `${(Number(value) * 100).toFixed(2)}%` : "-");
+
+      function canvasContext(id) {
+        const canvas = document.querySelector(`#${id}`);
+        if (!canvas) return null;
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = Math.max(320, Math.floor(rect.width * dpr));
+        canvas.height = Math.max(220, Math.floor(rect.height * dpr));
+        const ctx = canvas.getContext("2d");
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        return { canvas, ctx, width: canvas.width / dpr, height: canvas.height / dpr };
+      }
+
+      function clearChart(id, label = "Keine Daten") {
+        const chart = canvasContext(id);
+        if (!chart) return;
+        const { ctx, width, height } = chart;
+        ctx.clearRect(0, 0, width, height);
+        ctx.fillStyle = "#647084";
+        ctx.font = "13px system-ui";
+        ctx.fillText(label, 16, height / 2);
+      }
+
+      function drawAxes(ctx, width, height, padding) {
+        ctx.strokeStyle = "#dce2ea";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(padding.left, padding.top);
+        ctx.lineTo(padding.left, height - padding.bottom);
+        ctx.lineTo(width - padding.right, height - padding.bottom);
+        ctx.stroke();
+      }
+
+      function renderLineChart(id, series, options = {}) {
+        const chart = canvasContext(id);
+        if (!chart || !series || !series.length) return clearChart(id);
+        const { ctx, width, height } = chart;
+        const padding = { left: 52, right: 16, top: 18, bottom: 30 };
+        const all = series.flatMap((line) => line.points || []).filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+        if (!all.length) return clearChart(id);
+        const minX = Math.min(...all.map((point) => point.x));
+        const maxX = Math.max(...all.map((point) => point.x));
+        const minY = Math.min(...all.map((point) => point.y));
+        const maxY = Math.max(...all.map((point) => point.y));
+        const yPad = Math.max((maxY - minY) * 0.08, 1);
+        const xScale = (x) => padding.left + ((x - minX) / Math.max(maxX - minX, 1)) * (width - padding.left - padding.right);
+        const yScale = (y) => height - padding.bottom - ((y - (minY - yPad)) / Math.max(maxY - minY + yPad * 2, 1)) * (height - padding.top - padding.bottom);
+        ctx.clearRect(0, 0, width, height);
+        drawAxes(ctx, width, height, padding);
+        ctx.fillStyle = "#647084";
+        ctx.font = "11px system-ui";
+        ctx.fillText(money(maxY), 6, padding.top + 4);
+        ctx.fillText(money(minY), 6, height - padding.bottom);
+        series.forEach((line) => {
+          const points = (line.points || []).filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+          if (!points.length) return;
+          ctx.beginPath();
+          points.forEach((point, index) => {
+            const x = xScale(point.x);
+            const y = yScale(point.y);
+            if (index === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          });
+          ctx.strokeStyle = line.color || "#0f766e";
+          ctx.lineWidth = line.width || 2;
+          ctx.stroke();
+        });
+        if (options.legend) {
+          let x = padding.left;
+          options.legend.forEach((item) => {
+            ctx.fillStyle = item.color;
+            ctx.fillRect(x, 4, 10, 10);
+            ctx.fillStyle = "#647084";
+            ctx.fillText(item.label, x + 14, 13);
+            x += 86;
+          });
+        }
+      }
+
+      function renderHistogram(id, buckets) {
+        const chart = canvasContext(id);
+        if (!chart || !buckets || !buckets.length) return clearChart(id);
+        const { ctx, width, height } = chart;
+        const padding = { left: 36, right: 10, top: 16, bottom: 28 };
+        const maxCount = Math.max(...buckets.map((bucket) => bucket.count), 1);
+        ctx.clearRect(0, 0, width, height);
+        drawAxes(ctx, width, height, padding);
+        const barWidth = (width - padding.left - padding.right) / buckets.length;
+        buckets.forEach((bucket, index) => {
+          const barHeight = (bucket.count / maxCount) * (height - padding.top - padding.bottom);
+          ctx.fillStyle = "#14b8a6";
+          ctx.fillRect(padding.left + index * barWidth + 1, height - padding.bottom - barHeight, Math.max(barWidth - 2, 1), barHeight);
+        });
+        ctx.fillStyle = "#647084";
+        ctx.font = "11px system-ui";
+        ctx.fillText(String(maxCount), 6, padding.top + 4);
+      }
+
+      function renderMonteCarlo(summary) {
+        if (!summary) {
+          document.querySelector("#simulation-metrics").innerHTML = "";
+          document.querySelector("#simulation").textContent = "Noch keine Simulation.";
+          clearChart("monte-carlo-fan-chart");
+          clearChart("monte-carlo-histogram");
+          return;
+        }
+        document.querySelector("#simulation-metrics").innerHTML = [
+          ["Median Endwert", money(summary.median_terminal_value)],
+          ["P05 Endwert", money(summary.p05_terminal_value)],
+          ["P95 Endwert", money(summary.p95_terminal_value)],
+          ["Ruin Risk", pct(summary.probability_of_ruin)],
+        ]
+          .map(([label, value]) => `<div class="metric"><span class="muted">${label}</span><strong>${value}</strong></div>`)
+          .join("");
+        const fan = summary.fan_chart || [];
+        renderLineChart(
+          "monte-carlo-fan-chart",
+          [
+            { color: "#ef4444", width: 1.5, points: fan.map((point) => ({ x: point.day, y: point.p05 })) },
+            { color: "#0f766e", width: 2.5, points: fan.map((point) => ({ x: point.day, y: point.p50 })) },
+            { color: "#2563eb", width: 1.5, points: fan.map((point) => ({ x: point.day, y: point.p95 })) },
+          ],
+          { legend: [{ label: "P05", color: "#ef4444" }, { label: "Median", color: "#0f766e" }, { label: "P95", color: "#2563eb" }] },
+        );
+        renderHistogram("monte-carlo-histogram", summary.terminal_value_histogram || []);
+        document.querySelector("#simulation").textContent = json({
+          seed: summary.seed,
+          paths: summary.paths,
+          horizon_days: summary.horizon_days,
+          mean_terminal_return: pct(summary.mean_terminal_return),
+          var_95: pct(summary.value_at_risk_95),
+          cvar_95: pct(summary.conditional_value_at_risk_95),
+          max_drawdown_p95: pct(summary.max_drawdown_p95),
+        });
+      }
 
       async function api(path, options = {}) {
         const response = await fetch(path, {
@@ -379,6 +552,7 @@
           document.querySelector("#backtest-metrics").innerHTML = "";
           document.querySelector("#backtest-trades").innerHTML = "";
           document.querySelector("#backtest-equity").textContent = "Noch kein Backtest.";
+          clearChart("backtest-equity-chart");
           return;
         }
 
@@ -407,6 +581,14 @@
               </tr>`,
             )
             .join("") || '<tr><td colspan="4" class="muted">Keine Trades.</td></tr>';
+        renderLineChart(
+          "backtest-equity-chart",
+          [
+            { color: "#0f766e", width: 2.5, points: curve.map((point, index) => ({ x: index, y: point.equity })) },
+            { color: "#f59e0b", width: 1.5, points: curve.map((point, index) => ({ x: index, y: point.close * ((metrics.final_equity || 1) / (lastPoint.close || 1)) })) },
+          ],
+          { legend: [{ label: "Equity", color: "#0f766e" }, { label: "Preis skaliert", color: "#f59e0b" }] },
+        );
         document.querySelector("#backtest-equity").textContent = json({
           symbol: backtest.symbol,
           buy_and_hold_return: pct(metrics.buy_and_hold_return),
@@ -416,7 +598,7 @@
       }
 
       async function refresh() {
-        const [auth, config, status, strategy, orders, audit, backtests] = await Promise.all([
+        const [auth, config, status, strategy, orders, audit, backtests, simulations] = await Promise.all([
           api("/api/auth/me"),
           api("/api/config"),
           api("/api/portfolio/status"),
@@ -424,6 +606,7 @@
           api("/api/orders"),
           api("/api/audit-events"),
           api("/api/backtests/latest"),
+          api("/api/simulations/latest"),
         ]);
         renderAuthState(auth);
         document.querySelector("#config").textContent = json(config);
@@ -432,6 +615,7 @@
         renderOrders(orders);
         renderAudit(audit);
         renderBacktest(backtests[0]);
+        renderMonteCarlo(simulations[0]?.metrics);
       }
 
       document.querySelector("#refresh").addEventListener("click", refresh);
@@ -440,7 +624,7 @@
           method: "POST",
           body: json({ seed: 42, paths: 1000, horizon_days: 252 }),
         });
-        document.querySelector("#simulation").textContent = json(result.summary);
+        renderMonteCarlo(result.summary);
         await refresh();
       });
       document.querySelector("#run-improve").addEventListener("click", async () => {
