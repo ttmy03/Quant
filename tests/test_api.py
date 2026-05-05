@@ -165,6 +165,9 @@ def test_backtest_endpoint_runs_and_persists_when_auth_disabled(tmp_path) -> Non
     assert latest_response.json()[0]["symbol"] == "AAPL"
     assert payload["data_source"] == "synthetic"
     assert payload["bars_count"] == 80
+    assert payload["backtest"]["inputs"]["timeframe"] == "5Min"
+    assert payload["backtest"]["inputs"]["bars_per_symbol"]["AAPL"] == 80
+    assert "profit_factor" in payload["backtest"]["metrics"]
 
 
 def test_backtest_endpoint_can_run_watchlist_portfolio(tmp_path) -> None:
@@ -347,7 +350,10 @@ def test_dashboard_includes_visual_chart_canvases(tmp_path) -> None:
     assert 'id="monte-carlo-histogram"' in response.text
     assert 'id="backtest-equity-chart"' in response.text
     assert 'id="backtest-days"' in response.text
+    assert 'id="backtest-timeframe"' in response.text
     assert "Backtest Zeitraum" in response.text
+    assert "Backtest Timeframe" in response.text
+    assert "Profit Factor" in response.text
     assert "Anfangswert" in response.text
     assert "Endwert" in response.text
     assert 'id="trading-control-card"' in response.text
@@ -376,7 +382,7 @@ def test_dashboard_includes_visual_chart_canvases(tmp_path) -> None:
     assert "renderBacktest(backtests[0])" not in response.text
     assert "renderMonteCarlo(simulations[0]?.metrics)" not in response.text
     assert 'body: json({ symbols: latestAnalysisSymbols().slice(0, 20), seed: 42, paths: 1000, horizon_days: 252, lookback_days: 252, data_source: "auto" })' in response.text
-    assert 'body: json({ symbols: latestAnalysisSymbols().slice(0, 20), days, seed: 42, initial_cash: 10000, trade_notional: 1000, data_source: dataSource })' in response.text
+    assert 'body: json({ symbols: latestAnalysisSymbols().slice(0, 20), days, seed: 42, initial_cash: 10000, trade_notional: 1000, data_source: dataSource, timeframe })' in response.text
     assert "Gesamtportfolio Equity" in response.text
     assert "Gekauft/verkauft" in response.text
     assert "Watchlist Portfolio" in response.text

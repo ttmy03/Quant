@@ -67,7 +67,7 @@ def test_intraday_strategy_sizes_risk_lower_when_volatility_is_high() -> None:
 
     assert stable_signal.action == "BUY"
     assert stable_signal.timeframe == "intraday_5min"
-    assert stable_signal.strategy_mode == "intraday_long_only_no_leverage"
+    assert stable_signal.strategy_mode == "intraday_vwap_relative_strength_adaptive_risk"
     assert stable_signal.risk_fraction > volatile_signal.risk_fraction
     assert stable_signal.target_notional > volatile_signal.target_notional
     assert "no leverage" in stable_signal.reason.lower()
@@ -79,7 +79,41 @@ def test_strategy_sell_signal_is_long_exit_not_short_entry() -> None:
     signal = strategy.generate_signal("MSFT", bars_from_prices([100, 110, 109, 108, 90]))
 
     assert signal.action == "SELL"
-    assert signal.strategy_mode == "intraday_long_only_no_leverage"
+    assert signal.strategy_mode == "intraday_vwap_relative_strength_adaptive_risk"
     assert signal.risk_fraction == 0.0
     assert signal.target_notional == 0.0
     assert "exit only" in signal.reason.lower()
+
+
+def test_strategy_v2_requires_price_above_vwap_for_new_long_entries() -> None:
+    strategy = MovingAverageCrossoverStrategy(
+        StrategyParams(
+            short_window=2,
+            long_window=4,
+            min_crossover_pct=0.001,
+            momentum_window=3,
+            min_momentum_pct=0.001,
+            vwap_window=4,
+        )
+    )
+    bars = bars_from_prices([100, 100, 110, 115, 104])
+    bars[-1].volume = 10
+
+    signal = strategy.generate_signal("MSFT", bars)
+
+    assert signal.action != "BUY"
+    assert "vwap" in signal.reason.lower()
+
+
+def test_strategy_v2_buy_reason_mentions_vwap_atr_and_relative_strength() -> None:
+    strategy = MovingAverageCrossoverStrategy(
+        StrategyParams(short_window=2, long_window=4, min_crossover_pct=0.001, momentum_window=3, min_momentum_pct=0.001)
+    )
+
+    signal = strategy.generate_signal("MSFT", bars_from_prices([100, 100, 101, 102, 103, 104, 106, 108]))
+
+    assert signal.action == "BUY"
+    assert signal.strategy_mode == "intraday_vwap_relative_strength_adaptive_risk"
+    assert "vwap" in signal.reason.lower()
+    assert "atr" in signal.reason.lower()
+    assert "relative strength" in signal.reason.lower()

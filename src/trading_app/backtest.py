@@ -16,6 +16,36 @@ from trading_app.schemas import (
 from trading_app.strategy import MovingAverageCrossoverStrategy, StrategyParams
 
 
+def _trade_quality_metrics(trades: Sequence[BacktestTrade]) -> dict[str, object]:
+    open_notional: dict[str, float] = {}
+    winners: list[float] = []
+    losers: list[float] = []
+    per_symbol_pnl: dict[str, float] = defaultdict(float)
+    per_symbol_trades: dict[str, int] = defaultdict(int)
+    for trade in trades:
+        symbol = trade.symbol.upper()
+        if trade.side == "buy":
+            open_notional[symbol] = float(trade.notional)
+            per_symbol_trades[symbol] += 1
+        elif trade.side == "sell" and symbol in open_notional:
+            pnl = float(trade.notional) - open_notional.pop(symbol)
+            per_symbol_pnl[symbol] += pnl
+            per_symbol_trades[symbol] += 1
+            if pnl > 0:
+                winners.append(pnl)
+            else:
+                losers.append(abs(pnl))
+    gross_profit = sum(winners)
+    gross_loss = sum(losers)
+    return {
+        "profit_factor": round(gross_profit / gross_loss, 6) if gross_loss > 0 else (round(gross_profit, 6) if gross_profit > 0 else None),
+        "avg_winner": round(gross_profit / len(winners), 4) if winners else None,
+        "avg_loser": round(-(gross_loss / len(losers)), 4) if losers else None,
+        "per_symbol_pnl": {symbol: round(value, 4) for symbol, value in sorted(per_symbol_pnl.items())},
+        "per_symbol_trades": dict(sorted(per_symbol_trades.items())),
+    }
+
+
 def run_backtest(
     bars: Sequence[Bar],
     params: StrategyParams,
@@ -107,6 +137,7 @@ def run_backtest(
         else 0.0
     )
     win_rate = (winning_round_trips / closed_round_trips) if closed_round_trips else None
+    diagnostics = _trade_quality_metrics(trades)
 
     metrics = BacktestMetrics(
         total_return=round((final_equity / float(initial_cash)) - 1, 6),
@@ -116,6 +147,7 @@ def run_backtest(
         win_rate=round(win_rate, 6) if win_rate is not None else None,
         exposure_pct=round(exposure_pct, 6),
         buy_and_hold_return=round(float(buy_and_hold_return), 6),
+        **diagnostics,
     )
 
     return BacktestResult(
@@ -156,12 +188,12 @@ def run_portfolio_backtest(
     if not ordered:
         return run_backtest([], params, initial_cash=initial_cash, trade_notional=trade_notional)
 
-    bars_by_date: dict[object, dict[str, Bar]] = defaultdict(dict)
+    bars_by_timestamp: dict[object, dict[str, Bar]] = defaultdict(dict)
     history_by_symbol: dict[str, list[Bar]] = {symbol: [] for symbol in ordered}
     latest_price: dict[str, float] = {}
     for symbol, bars in ordered.items():
         for bar in bars:
-            bars_by_date[bar.timestamp.date()][symbol] = bar
+            bars_by_timestamp[bar.timestamp][symbol] = bar
 
     cash = float(initial_cash)
     positions: dict[str, float] = {symbol: 0.0 for symbol in ordered}
@@ -201,8 +233,8 @@ def run_portfolio_backtest(
             )
         )
 
-    for day in sorted(bars_by_date):
-        day_bars = bars_by_date[day]
+    for timestamp in sorted(bars_by_timestamp):
+        day_bars = bars_by_timestamp[timestamp]
         for symbol in sorted(ordered):
             bar = day_bars.get(symbol)
             if bar is not None:
@@ -298,6 +330,7 @@ def run_portfolio_backtest(
     hold_returns = [bars[-1].close / bars[0].close - 1 for bars in ordered.values() if len(bars) >= 2 and bars[0].close > 0]
     buy_and_hold_return = sum(hold_returns) / len(hold_returns) if hold_returns else 0.0
     win_rate = (winning_round_trips / closed_round_trips) if closed_round_trips else None
+    diagnostics = _trade_quality_metrics(trades)
 
     metrics = BacktestMetrics(
         total_return=round((final_equity / float(initial_cash)) - 1, 6),
@@ -307,6 +340,7 @@ def run_portfolio_backtest(
         win_rate=round(win_rate, 6) if win_rate is not None else None,
         exposure_pct=round(exposure_pct, 6),
         buy_and_hold_return=round(float(buy_and_hold_return), 6),
+        **diagnostics,
     )
 
     return BacktestResult(

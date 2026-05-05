@@ -591,7 +591,7 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
         action_counts = Counter(signal["action"] for signal in demo_signals)
         return {
             "name": MovingAverageCrossoverStrategy.name,
-            "description": "Intraday Long-only Adaptive Risk: handelt nur Long-Cash-Setups ohne Hebel, nutzt 5-Minuten-Signale, sortiert Kandidaten nach Confidence und reduziert den Risikoeinsatz automatisch bei hoher Volatilität, Drawdown oder schwacher Momentum-Bestätigung.",
+            "description": "Intraday VWAP + Relative Strength Adaptive Risk V2: handelt nur Long-Cash-Setups ohne Hebel, nutzt 5-Minuten-Signale, VWAP-/Trend-/Momentum-/Relative-Strength-Filter, ATR-basiertes Risiko und reduziert den Einsatz automatisch bei hoher Volatilität oder Drawdown.",
             "params": params.__dict__,
             "latest_demo_signal": demo_signals[0] if demo_signals else None,
             "latest_demo_signals": demo_signals,
@@ -750,7 +750,7 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
         bars = []
         if request.data_source in {"auto", "alpaca"}:
             try:
-                bars = AlpacaClient(settings).historical_bars(symbol, days=request.days)
+                bars = AlpacaClient(settings).historical_bars(symbol, days=request.days, timeframe=request.timeframe)
             except Exception as exc:  # noqa: BLE001 - external market-data failure should not break research mode
                 fallback_reason = f"Alpaca historical data unavailable: {exc}"
         if bars:
@@ -795,6 +795,8 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
         inputs["resolved_data_source"] = data_source
         inputs["fallback_reason"] = fallback_reason
         inputs["bars_count"] = bars_count
+        inputs["bars_per_symbol"] = {str(payload["symbol"]): int(payload["bars_count"]) for payload in symbol_payloads}
+        inputs["timeframe"] = request.timeframe
         inputs["per_symbol"] = [
             {
                 "symbol": payload["symbol"],

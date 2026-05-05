@@ -22,6 +22,22 @@ def bars_from_prices(prices: list[float], symbol: str = "AAPL") -> list[Bar]:
     ]
 
 
+def intraday_bars_from_prices(prices: list[float], symbol: str = "AAPL") -> list[Bar]:
+    start = datetime(2024, 1, 2, 14, 30, tzinfo=UTC)
+    return [
+        Bar(
+            symbol=symbol,
+            timestamp=start + timedelta(minutes=5 * index),
+            open=price,
+            high=price + 0.2,
+            low=price - 0.2,
+            close=price,
+            volume=1_000 + index,
+        )
+        for index, price in enumerate(prices)
+    ]
+
+
 def test_backtest_holds_without_enough_data() -> None:
     result = run_backtest(
         bars_from_prices([10, 11, 12]),
@@ -118,3 +134,35 @@ def test_storage_roundtrips_backtest_result(tmp_path) -> None:
     assert latest[0]["symbol"] == "AAPL"
     assert latest[0]["metrics"]["final_equity"] == result.metrics.final_equity
     assert latest[0]["trades"] == [trade.model_dump(mode="json") for trade in result.trades]
+
+
+def test_portfolio_backtest_steps_through_intraday_timestamps_not_only_dates() -> None:
+    result = run_portfolio_backtest(
+        {
+            "FAST": intraday_bars_from_prices([10, 10, 10, 10, 11, 12, 13, 14], "FAST"),
+            "SLOW": intraday_bars_from_prices([20, 20, 20, 20, 20.5, 21, 21.5, 22], "SLOW"),
+        },
+        StrategyParams(short_window=2, long_window=4, min_crossover_pct=0.001),
+        initial_cash=10_000,
+        trade_notional=1_000,
+    )
+
+    assert len(result.equity_curve) == 8
+    assert result.equity_curve[1].timestamp > result.equity_curve[0].timestamp
+
+
+def test_portfolio_backtest_reports_trade_quality_diagnostics() -> None:
+    result = run_portfolio_backtest(
+        {
+            "WIN": bars_from_prices([10, 10, 10, 10, 11, 12, 13, 14, 15], "WIN"),
+            "LOSE": bars_from_prices([20, 20, 20, 20, 22, 18, 17, 16, 15], "LOSE"),
+        },
+        StrategyParams(short_window=2, long_window=4, min_crossover_pct=0.001, stop_loss_pct=0.08),
+        initial_cash=10_000,
+        trade_notional=1_000,
+    )
+
+    assert result.metrics.profit_factor is not None
+    assert result.metrics.avg_loser is not None
+    assert result.metrics.per_symbol_pnl
+    assert set(result.metrics.per_symbol_pnl).issubset({"WIN", "LOSE"})

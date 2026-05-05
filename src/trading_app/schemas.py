@@ -119,6 +119,11 @@ class StrategyParamsModel(BaseModel):
     max_positions: int = Field(default=5, ge=1, le=20)
     stop_loss_pct: float = Field(default=0.08, ge=0.01, le=0.8)
     trailing_stop_pct: float = Field(default=0.12, ge=0.01, le=0.8)
+    vwap_window: int = Field(default=20, ge=2, le=500)
+    atr_period: int = Field(default=14, ge=2, le=250)
+    atr_stop_multiplier: float = Field(default=1.5, ge=0.1, le=10.0)
+    atr_trailing_multiplier: float = Field(default=2.0, ge=0.1, le=10.0)
+    min_relative_strength_pct: float = Field(default=0.0, ge=-0.2, le=0.5)
     base_risk_fraction: float = Field(default=0.06, ge=0.001, le=0.5)
     min_risk_fraction: float = Field(default=0.01, ge=0.001, le=0.5)
     max_risk_fraction: float = Field(default=0.12, ge=0.001, le=0.5)
@@ -207,6 +212,7 @@ class BacktestRequest(BaseModel):
     initial_cash: float = Field(default=10_000.0, gt=0)
     trade_notional: float = Field(default=1_000.0, gt=0)
     data_source: BacktestDataSource = "auto"
+    timeframe: str = "5Min"
     strategy: StrategyParamsModel | None = None
 
     @field_validator("symbol")
@@ -253,6 +259,11 @@ class BacktestMetrics(BaseModel):
     win_rate: float | None = None
     exposure_pct: float
     buy_and_hold_return: float
+    profit_factor: float | None = None
+    avg_winner: float | None = None
+    avg_loser: float | None = None
+    per_symbol_pnl: dict[str, float] = Field(default_factory=dict)
+    per_symbol_trades: dict[str, int] = Field(default_factory=dict)
 
 
 class BacktestResult(BaseModel):

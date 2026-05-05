@@ -194,12 +194,13 @@ class AlpacaClient:
                 "timeframe": timeframe,
                 "start": start.isoformat().replace("+00:00", "Z"),
                 "end": end.isoformat().replace("+00:00", "Z"),
-                "limit": str(days),
+                "limit": str(10_000 if timeframe != "1Day" else days),
                 "adjustment": "raw",
                 "feed": "iex",
             },
         )
-        return [self._parse_bar(symbol, raw_bar) for raw_bar in payload.get("bars", [])][-days:]
+        returned_bars = [self._parse_bar(symbol, raw_bar) for raw_bar in payload.get("bars", [])]
+        return returned_bars[-(10_000 if timeframe != "1Day" else days):]
 
     @staticmethod
     def _parse_bar(symbol: str, raw_bar: dict[str, Any]) -> Bar:
