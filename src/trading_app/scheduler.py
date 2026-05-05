@@ -9,6 +9,7 @@ from trading_app.risk import RiskGuard
 from trading_app.schemas import OrderIntent, SchedulerRunRequest
 from trading_app.storage import Storage
 from trading_app.strategy import MovingAverageCrossoverStrategy, StrategyParams
+from trading_app.watchlist import build_dynamic_halal_watchlist
 
 
 class DryRunSchedulerService:
@@ -20,11 +21,20 @@ class DryRunSchedulerService:
         self.strategy_params = strategy_params
 
     def run_once(self, request: SchedulerRunRequest) -> dict[str, Any]:
-        symbols = request.symbols or list(self.settings.default_symbols)
-        symbols = [symbol.upper() for symbol in symbols]
         effective_settings = self.settings.model_copy(
             update={"dry_run": True, "paper_trading_only": True}
         )
+        client = AlpacaClient(effective_settings)
+        watchlist_payload: dict[str, Any] | None = None
+        if request.symbols:
+            symbols = [symbol.upper() for symbol in request.symbols]
+        else:
+            watchlist_payload = build_dynamic_halal_watchlist(client, limit=20)
+            symbols = [symbol.upper() for symbol in watchlist_payload["symbols"]]
+            if not symbols:
+                symbols = list(self.settings.default_symbols)
+        effective_settings = effective_settings.model_copy(update={"default_symbols": tuple(symbols)})
+        client = AlpacaClient(effective_settings)
         run = self.storage.start_scheduler_run(
             dry_run=True,
             paper_trading_only=True,
@@ -52,9 +62,9 @@ class DryRunSchedulerService:
                 "orders": [],
                 "control": control,
                 "no_live_orders_sent": True,
+                "watchlist": watchlist_payload,
             }
 
-        client = AlpacaClient(effective_settings)
         risk_guard = RiskGuard(effective_settings)
         strategy = MovingAverageCrossoverStrategy(self.strategy_params)
         signal_records: list[dict[str, Any]] = []
@@ -131,4 +141,5 @@ class DryRunSchedulerService:
             "orders": order_records,
             "control": control,
             "no_live_orders_sent": True,
+            "watchlist": watchlist_payload,
         }

@@ -37,6 +37,7 @@ from trading_app.schemas import (
 from trading_app.scheduler import DryRunSchedulerService
 from trading_app.storage import Storage
 from trading_app.strategy import MovingAverageCrossoverStrategy, StrategyParams
+from trading_app.watchlist import build_dynamic_halal_watchlist
 
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -302,6 +303,10 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
     @app.get("/api/portfolio/positions")
     def portfolio_positions() -> dict[str, object]:
         return AlpacaClient(settings).positions()
+
+    @app.get("/api/watchlist")
+    def watchlist(limit: Annotated[int, Query(ge=1, le=20)] = 20) -> dict[str, object]:
+        return build_dynamic_halal_watchlist(AlpacaClient(settings), limit=limit)
 
     @app.get("/api/trading-control")
     def trading_control() -> dict[str, object]:

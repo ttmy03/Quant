@@ -345,6 +345,36 @@
         padding: 0 8px;
         white-space: nowrap;
       }
+      .watchlist-scroll {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        max-height: 360px;
+        overflow-y: auto;
+      }
+      .watchlist-table th,
+      .watchlist-table td {
+        font-size: 12px;
+        padding: 7px;
+      }
+      .watchlist-symbol strong {
+        display: block;
+        font-size: 13px;
+      }
+      .watchlist-symbol span {
+        color: var(--muted);
+        display: block;
+        font-size: 11px;
+      }
+      .watchlist-rank {
+        background: #ecfdf5;
+        border-radius: 999px;
+        color: var(--accent-dark);
+        display: inline-block;
+        font-weight: 800;
+        min-width: 26px;
+        padding: 4px 7px;
+        text-align: center;
+      }
       .chart-grid {
         display: grid;
         gap: 12px;
@@ -681,6 +711,35 @@
             <div class="metric-grid" id="balance-metrics"></div>
           </section>
 
+          <section class="span-12" id="watchlist-card">
+            <div class="section-header">
+              <div>
+                <h3>Dynamische Halal Midcap Watchlist</h3>
+                <p class="helper-text">20 vorausgewählte, qualitativ halal-geprüfte Midcap-Kandidaten. Die Rangfolge wird dynamisch über aktuelle Preise, Margin of Safety und Score neu berechnet.</p>
+              </div>
+              <button class="secondary" id="refresh-watchlist" data-help="Bewertet die 20 Halal-Midcap-Kandidaten mit aktuellen Kursen neu und sortiert die Watchlist dynamisch nach Unterbewertung.">Watchlist neu bewerten</button>
+            </div>
+            <div class="metric-grid compact-metrics" id="watchlist-metrics"></div>
+            <p class="live-indicator" id="watchlist-updated">Watchlist wird geladen...</p>
+            <div class="watchlist-scroll">
+              <table class="watchlist-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Aktie</th>
+                    <th>Sektor</th>
+                    <th>Kurs</th>
+                    <th>Fair Value</th>
+                    <th>Margin</th>
+                    <th>Score</th>
+                    <th>Halal-Status</th>
+                  </tr>
+                </thead>
+                <tbody id="watchlist-table"></tbody>
+              </table>
+            </div>
+          </section>
+
           <section class="span-6">
             <h3>Positionen</h3>
             <p class="helper-text">Aktuelle Paper-Positionen aus Alpaca. Ohne Alpaca-Zugriff bleibt die Liste leer und die Quelle steht oben bei Balance.</p>
@@ -795,7 +854,7 @@
             <h3>Manuelle Dry-Run Order</h3>
             <p class="helper-text">Zum Testen des Order- und Risk-Flows. Keine echte Börsenorder.</p>
             <form class="form-grid" id="order-form">
-              <input name="symbol" value="AAPL" aria-label="Symbol" />
+              <input name="symbol" value="ALGM" aria-label="Symbol" />
               <select name="side" aria-label="Seite">
                 <option value="buy">Kaufen</option>
                 <option value="sell">Verkaufen</option>
@@ -880,6 +939,8 @@
 
     <script>
       const json = (value) => JSON.stringify(value, null, 2);
+      let latestWatchlistSymbols = [];
+      const primaryWatchlistSymbol = () => latestWatchlistSymbols[0] || "ALGM";
       const money = (value) => (Number.isFinite(Number(value)) ? Number(value).toFixed(2) : "-");
       const pct = (value) => (Number.isFinite(Number(value)) ? `${(Number(value) * 100).toFixed(2)}%` : "-");
       const signedPct = (value) => {
@@ -1106,11 +1167,43 @@
           ["Quelle", summary.source || "-", ""],
           ["Positionen", summary.positions_count ?? 0, ""],
           ["Positionswert", money(summary.positions_market_value), ""],
-          ["Symbole", bars.map((bar) => bar.symbol).join(", ") || "-", ""],
+          ["Symbole", bars.map((bar) => bar.symbol).slice(0, 6).join(", ") + (bars.length > 6 ? " ..." : "") || "-", ""],
           ["Letzter Preis", bars[0] ? bars[0].close.toFixed(2) : "-", ""],
         ]
           .map(([label, value, extraClass]) => `<div class="metric ${extraClass}"><span class="muted">${label}</span><strong>${value}</strong></div>`)
           .join("");
+      }
+
+      function renderWatchlist(watchlist) {
+        const candidates = watchlist?.candidates || [];
+        latestWatchlistSymbols = watchlist?.symbols || candidates.map((candidate) => candidate.symbol);
+        document.querySelector("#watchlist-metrics").innerHTML = [
+          ["Kandidaten", watchlist?.count ?? candidates.length],
+          ["Quelle", watchlist?.source || "-"],
+          ["Nur undervalued", "Ja"],
+          ["Top Symbol", primaryWatchlistSymbol()],
+        ]
+          .map(([label, value]) => `<div class="metric"><span class="muted">${label}</span><strong>${value}</strong></div>`)
+          .join("");
+        const updated = document.querySelector("#watchlist-updated");
+        if (updated) {
+          updated.textContent = `Dynamisch aktualisiert: ${dateTime(watchlist?.updated_at)} · ${watchlist?.methodology?.disclaimer || "Research Watchlist, keine Anlageberatung."}`;
+        }
+        document.querySelector("#watchlist-table").innerHTML =
+          candidates
+            .map(
+              (candidate) => `<tr>
+                <td><span class="watchlist-rank">${candidate.rank}</span></td>
+                <td class="watchlist-symbol"><strong>${candidate.symbol}</strong><span>${candidate.name}</span></td>
+                <td>${candidate.sector}<br><span class="muted">${candidate.industry}</span></td>
+                <td>${money(candidate.latest_price)}<br><span class="muted">${candidate.price_source}</span></td>
+                <td>${money(candidate.fair_value)}</td>
+                <td class="${pnlClass(candidate.margin_of_safety)}">${signedPct(candidate.margin_of_safety)}</td>
+                <td>${candidate.score}</td>
+                <td>${badge("Halal Kandidat", "ok")}<br><span class="muted">Midcap · undervalued</span></td>
+              </tr>`,
+            )
+            .join("") || '<tr><td colspan="8" class="muted">Keine Watchlist-Kandidaten verfügbar.</td></tr>';
       }
 
       function renderPositions(positions) {
@@ -1321,11 +1414,12 @@
       }
 
       async function refresh() {
-        const [auth, config, status, activeTrades, control, strategy, orders, audit, alerts, backtests, simulations, report] = await Promise.all([
+        const [auth, config, status, activeTrades, watchlist, control, strategy, orders, audit, alerts, backtests, simulations, report] = await Promise.all([
           api("/api/auth/me"),
           api("/api/config"),
           api("/api/portfolio/status"),
           api("/api/trades/active"),
+          api("/api/watchlist"),
           api("/api/trading-control"),
           api("/api/strategy"),
           api("/api/orders"),
@@ -1352,6 +1446,7 @@
           ["Demo Signal", `${strategy.latest_demo_signal?.action || "-"} (${strategy.latest_demo_signal?.reason || "-"})`],
         ]);
         renderBalanceMetrics(status);
+        renderWatchlist(watchlist);
         renderPositions(status.positions);
         renderActiveTrades(activeTrades);
         const liveStatus = document.querySelector("#portfolio-live-status");
@@ -1416,6 +1511,12 @@
       document.querySelector("#refresh").addEventListener("click", (event) =>
         withButtonLoading(event.currentTarget, "Aktualisierung", refresh),
       );
+      document.querySelector("#refresh-watchlist").addEventListener("click", (event) =>
+        withButtonLoading(event.currentTarget, "Watchlist-Bewertung", async () => {
+          const watchlist = await api("/api/watchlist");
+          renderWatchlist(watchlist);
+        }),
+      );
       document.querySelector("#enable-kill-switch").addEventListener("click", (event) =>
         withButtonLoading(event.currentTarget, "Not-Aus Aktivierung", async () => {
           await api("/api/trading-control/kill-switch", {
@@ -1463,6 +1564,7 @@
             ["Status", result.run?.status || "-"],
             ["Signale", result.signals?.length ?? 0],
             ["Orders", result.orders?.length ?? 0],
+            ["Watchlist", result.watchlist?.symbols?.slice(0, 5).join(", ") || "manuell"],
             ["Live Orders", result.no_live_orders_sent ? "Keine" : "Achtung"],
           ], result.run?.status === "completed" ? "ok" : "warn");
           await refresh();
@@ -1489,7 +1591,7 @@
           renderStatusList("#strategy", [["Status", "Optimierung läuft gerade..."]]);
           const result = await api("/api/improvement/run", {
             method: "POST",
-            body: json({ symbol: "AAPL", days: 180, seed: 42 }),
+            body: json({ symbol: primaryWatchlistSymbol(), days: 180, seed: 42 }),
           });
           renderStatusList("#strategy", [
             ["Promoted", yesNo(result.promoted)],
@@ -1509,7 +1611,7 @@
           daysInput.value = days;
           const result = await api("/api/backtests/run", {
             method: "POST",
-            body: json({ symbol: "AAPL", days, seed: 42, initial_cash: 10000, trade_notional: 1000, data_source: dataSource }),
+            body: json({ symbol: primaryWatchlistSymbol(), days, seed: 42, initial_cash: 10000, trade_notional: 1000, data_source: dataSource }),
           });
           renderBacktest(result.backtest);
           await refresh();

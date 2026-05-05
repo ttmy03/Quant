@@ -238,6 +238,28 @@ def test_active_trades_endpoint_surfaces_local_dry_run_orders_and_signals(tmp_pa
     assert payload["source"] == "local_dry_run_plus_alpaca_if_configured"
 
 
+
+def test_scheduler_uses_dynamic_halal_watchlist_when_symbols_are_omitted(tmp_path) -> None:
+    settings = Settings(
+        DATABASE_PATH=tmp_path / "test.sqlite3",
+        AUTH_ENABLED=False,
+        ALPACA_API_KEY="",
+        ALPACA_SECRET_KEY="",
+        _env_file=None,
+    )
+    app = create_app(settings=settings, storage=Storage(settings.database_path))
+
+    with ASGITestClient(app) as client:
+        response = client.post("/api/scheduler/run-once", json={"lookback_days": 20, "seed": 1})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["watchlist"]["count"] == 20
+    assert len(payload["run"]["symbols"]) == 20
+    assert payload["run"]["symbols"] == payload["watchlist"]["symbols"]
+    assert "AAPL" not in payload["run"]["symbols"]
+    assert payload["no_live_orders_sent"] is True
+
 def test_close_position_endpoint_records_dry_run_exit_order_even_when_entry_risk_limits_would_block(monkeypatch, tmp_path) -> None:
     settings = Settings(
         DATABASE_PATH=tmp_path / "test.sqlite3",

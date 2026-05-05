@@ -220,6 +220,32 @@ def test_monte_carlo_endpoint_returns_visualization_series(tmp_path) -> None:
     assert sum(bucket["count"] for bucket in histogram) == 200
 
 
+
+def test_watchlist_endpoint_returns_dynamic_halal_midcap_candidates(tmp_path) -> None:
+    settings = Settings(
+        DATABASE_PATH=tmp_path / "test.sqlite3",
+        AUTH_ENABLED=False,
+        ALPACA_API_KEY="",
+        ALPACA_SECRET_KEY="",
+        _env_file=None,
+    )
+    app = create_app(settings=settings, storage=Storage(settings.database_path))
+
+    with ASGITestClient(app) as client:
+        response = client.get("/api/watchlist")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["count"] == 20
+    assert len(payload["symbols"]) == 20
+    assert payload["methodology"]["universe"] == "20 qualitatively screened halal midcap candidates"
+    assert payload["candidates"][0]["rank"] == 1
+    assert all(candidate["halal_screen"] == "candidate_only_qualitative_pass" for candidate in payload["candidates"])
+    assert all(candidate["market_cap_category"] == "midcap" for candidate in payload["candidates"])
+    assert all(candidate["undervalued"] is True for candidate in payload["candidates"])
+    assert all(candidate["margin_of_safety"] > 0 for candidate in payload["candidates"])
+    assert payload["symbols"] == [candidate["symbol"] for candidate in payload["candidates"]]
+
 def test_dashboard_includes_visual_chart_canvases(tmp_path) -> None:
     settings = Settings(DATABASE_PATH=tmp_path / "test.sqlite3", AUTH_ENABLED=False, _env_file=None)
     app = create_app(settings=settings, storage=Storage(settings.database_path))
@@ -242,6 +268,13 @@ def test_dashboard_includes_visual_chart_canvases(tmp_path) -> None:
     assert 'id="balance-metrics"' in response.text
     assert 'id="active-trade-metrics"' in response.text
     assert 'id="active-trades"' in response.text
+    assert 'id="watchlist-card"' in response.text
+    assert 'id="watchlist-table"' in response.text
+    assert 'id="refresh-watchlist"' in response.text
+    assert "Dynamische Halal Midcap Watchlist" in response.text
+    assert 'api("/api/watchlist")' in response.text
+    assert "renderWatchlist" in response.text
+    assert "primaryWatchlistSymbol" in response.text
     assert 'class="status-list muted trade-scroll"' in response.text
     assert 'id="portfolio-live-status"' in response.text
     assert 'U/PnL %' in response.text
