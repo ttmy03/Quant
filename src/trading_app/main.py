@@ -30,6 +30,7 @@ from trading_app.schemas import (
     MonteCarloRequest,
     OrderIntent,
     OrderSubmission,
+    RiskDecision,
     SchedulerRunRequest,
     StrategyParamsModel,
 )
@@ -473,11 +474,11 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
         if estimated_price <= 0:
             bars = client.latest_bars([symbol])
             estimated_price = bars[0].close if bars else 0.0
-        orders_today = len(storage.list_orders(limit=settings.max_daily_orders))
-        risk_decision = RiskGuard(settings).evaluate_order(
-            intent,
-            estimated_price=estimated_price,
-            orders_today=orders_today,
+        estimated_notional = round(qty * estimated_price, 4)
+        risk_decision = RiskDecision(
+            allowed=True,
+            reasons=["manual position close is risk-reducing; entry risk limits bypassed"],
+            estimated_notional=estimated_notional,
         )
         submission = client.place_order(intent, risk_decision)
         order = storage.record_order(

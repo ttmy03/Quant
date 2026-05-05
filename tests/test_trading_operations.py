@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 from trading_app.config import Settings
 from trading_app.main import create_app
-from trading_app.schemas import OrderSubmission
+from trading_app.schemas import OrderIntent, OrderSubmission
 from trading_app.storage import Storage
 from tests.asgi_client import ASGITestClient
 
@@ -238,7 +238,7 @@ def test_active_trades_endpoint_surfaces_local_dry_run_orders_and_signals(tmp_pa
     assert payload["source"] == "local_dry_run_plus_alpaca_if_configured"
 
 
-def test_close_position_endpoint_records_dry_run_exit_order(monkeypatch, tmp_path) -> None:
+def test_close_position_endpoint_records_dry_run_exit_order_even_when_entry_risk_limits_would_block(monkeypatch, tmp_path) -> None:
     settings = Settings(
         DATABASE_PATH=tmp_path / "test.sqlite3",
         AUTH_ENABLED=False,
@@ -247,6 +247,9 @@ def test_close_position_endpoint_records_dry_run_exit_order(monkeypatch, tmp_pat
         ALPACA_SECRET_KEY="test-secret",
         DRY_RUN=True,
         PAPER_TRADING_ONLY=True,
+        MAX_ORDER_NOTIONAL=1000.0,
+        MAX_POSITION_NOTIONAL=5000.0,
+        MAX_DAILY_ORDERS=1,
         _env_file=None,
     )
 
@@ -260,14 +263,14 @@ def test_close_position_endpoint_records_dry_run_exit_order(monkeypatch, tmp_pat
                 "source": "alpaca",
                 "positions": [
                     {
-                        "symbol": "AAPL",
-                        "qty": 3.0,
+                        "symbol": "QQQ",
+                        "qty": 14.0,
                         "side": "long",
-                        "market_value": 300.0,
-                        "avg_entry_price": 90.0,
-                        "current_price": 100.0,
-                        "unrealized_pl": 30.0,
-                        "unrealized_plpc": 0.1111,
+                        "market_value": 9487.38,
+                        "avg_entry_price": 676.58,
+                        "current_price": 677.67,
+                        "unrealized_pl": 15.26,
+                        "unrealized_plpc": 0.00161,
                     }
                 ],
             }
@@ -276,6 +279,8 @@ def test_close_position_endpoint_records_dry_run_exit_order(monkeypatch, tmp_pat
             return []
 
         def place_order(self, intent, risk_decision):
+            assert risk_decision.allowed is True
+            assert risk_decision.estimated_notional == 9487.38
             return OrderSubmission(
                 accepted=True,
                 status="dry_run_accepted",
@@ -285,11 +290,18 @@ def test_close_position_endpoint_records_dry_run_exit_order(monkeypatch, tmp_pat
                 raw_response={"intent": intent.model_dump()},
             )
 
+    storage = Storage(settings.database_path)
+    storage.record_order(
+        OrderIntent(symbol="AAPL", side="buy", qty=1),
+        status="dry_run_accepted",
+        dry_run=True,
+        source="manual",
+    )
     monkeypatch.setattr("trading_app.main.AlpacaClient", FakeAlpacaClient)
-    app = create_app(settings=settings, storage=Storage(settings.database_path))
+    app = create_app(settings=settings, storage=storage)
 
     with ASGITestClient(app) as client:
-        response = client.post("/api/positions/AAPL/close", json={"reason": "operator close"})
+        response = client.post("/api/positions/QQQ/close", json={"reason": "operator close"})
         orders_response = client.get("/api/orders")
         audit_response = client.get("/api/audit-events")
 
@@ -297,9 +309,10 @@ def test_close_position_endpoint_records_dry_run_exit_order(monkeypatch, tmp_pat
     payload = response.json()
     assert payload["submission"]["status"] == "dry_run_accepted"
     assert payload["submission"]["dry_run"] is True
+    assert payload["risk"]["allowed"] is True
     assert payload["order"]["side"] == "sell"
-    assert payload["order"]["qty"] == 3.0
-    assert payload["position"]["symbol"] == "AAPL"
+    assert payload["order"]["qty"] == 14.0
+    assert payload["position"]["symbol"] == "QQQ"
     assert orders_response.json()[0]["source"] == "manual_position_close"
     assert audit_response.json()[0]["event_type"] == "position_close_submitted"
 
