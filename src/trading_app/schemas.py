@@ -115,6 +115,7 @@ class StrategyParamsModel(BaseModel):
 
 class MonteCarloRequest(BaseModel):
     symbol: str = "ALGM"
+    symbols: list[str] | None = None
     returns: list[float] | None = None
     initial_value: float = Field(default=10_000.0, gt=0)
     horizon_days: int = Field(default=252, ge=1, le=2520)
@@ -128,6 +129,18 @@ class MonteCarloRequest(BaseModel):
     @classmethod
     def uppercase_symbol(cls, value: str) -> str:
         return value.upper()
+
+    @field_validator("symbols")
+    @classmethod
+    def uppercase_symbols(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        seen: list[str] = []
+        for symbol in value:
+            normalized = symbol.strip().upper()
+            if normalized and normalized not in seen:
+                seen.append(normalized)
+        return seen[:20]
 
 
 class MonteCarloFanPoint(BaseModel):

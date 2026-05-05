@@ -1098,8 +1098,11 @@
           clearChart("monte-carlo-histogram");
           return;
         }
+        const perSymbol = summary.per_symbol || [];
+        const isPortfolio = perSymbol.length > 1;
         document.querySelector("#simulation-metrics").innerHTML = [
-          ["Symbol", summary.symbol || primaryWatchlistSymbol()],
+          ["Modus", isPortfolio ? "Watchlist Portfolio" : "Einzelsymbol"],
+          ["Symbole", isPortfolio ? perSymbol.length : (summary.symbol || primaryWatchlistSymbol())],
           ["Datenquelle", summary.data_source || "-"],
           ["Bars", summary.bars_count ?? 0],
           ["Median Endwert", money(summary.median_terminal_value)],
@@ -1110,25 +1113,47 @@
           .map(([label, value]) => `<div class="metric"><span class="muted">${label}</span><strong>${value}</strong></div>`)
           .join("");
         const fan = summary.fan_chart || [];
+        const palette = ["#0f766e", "#2563eb", "#9333ea", "#ea580c", "#0891b2", "#65a30d", "#db2777", "#475569", "#ca8a04", "#dc2626"];
+        const symbolLines = perSymbol.slice(0, 10).map((item, index) => ({
+          color: palette[index % palette.length],
+          width: 1.2,
+          points: (item.fan_chart || []).map((point) => ({ x: point.day, y: point.p50 })),
+        }));
         renderLineChart(
           "monte-carlo-fan-chart",
           [
             { color: "#ef4444", width: 1.5, points: fan.map((point) => ({ x: point.day, y: point.p05 })) },
-            { color: "#0f766e", width: 2.5, points: fan.map((point) => ({ x: point.day, y: point.p50 })) },
+            { color: "#0f766e", width: 3, points: fan.map((point) => ({ x: point.day, y: point.p50 })) },
             { color: "#2563eb", width: 1.5, points: fan.map((point) => ({ x: point.day, y: point.p95 })) },
+            ...symbolLines,
           ],
-          { legend: [{ label: "P05", color: "#ef4444" }, { label: "Median", color: "#0f766e" }, { label: "P95", color: "#2563eb" }] },
+          { legend: [
+            { label: isPortfolio ? "Portfolio P05" : "P05", color: "#ef4444" },
+            { label: isPortfolio ? "Portfolio Median" : "Median", color: "#0f766e" },
+            { label: isPortfolio ? "Portfolio P95" : "P95", color: "#2563eb" },
+            ...(isPortfolio ? perSymbol.slice(0, 5).map((item, index) => ({ label: `${item.symbol} Median`, color: palette[index % palette.length] })) : []),
+          ] },
         );
         renderHistogram("monte-carlo-histogram", summary.terminal_value_histogram || []);
-        renderStatusList("#simulation", [
-          ["Seed", summary.seed],
-          ["Pfade", summary.paths],
-          ["Horizont", `${summary.horizon_days} Tage`],
-          ["Ø Endrendite", pct(summary.mean_terminal_return)],
-          ["VaR 95", pct(summary.value_at_risk_95)],
-          ["CVaR 95", pct(summary.conditional_value_at_risk_95)],
-          ["P95 Drawdown", pct(summary.max_drawdown_p95)],
-        ]);
+        if (isPortfolio) {
+          document.querySelector("#simulation").innerHTML = `
+            <div class="status-list muted">
+              <div><strong>Portfolio-Modus:</strong> Gleichgewichtet über ${perSymbol.length} Watchlist-Symbole</div>
+              <div><strong>Seed:</strong> ${summary.seed} · <strong>Pfade:</strong> ${summary.paths} · <strong>Horizont:</strong> ${summary.horizon_days} Tage</div>
+              <div><strong>VaR 95:</strong> ${pct(summary.value_at_risk_95)} · <strong>CVaR 95:</strong> ${pct(summary.conditional_value_at_risk_95)} · <strong>P95 Drawdown:</strong> ${pct(summary.max_drawdown_p95)}</div>
+              ${perSymbol.map((item) => `<div><strong>${item.symbol}</strong>: Median ${money(item.median_terminal_value)} · Ruin ${pct(item.probability_of_ruin)} · Quelle ${item.data_source} · Bars ${item.bars_count}</div>`).join("")}
+            </div>`;
+        } else {
+          renderStatusList("#simulation", [
+            ["Seed", summary.seed],
+            ["Pfade", summary.paths],
+            ["Horizont", `${summary.horizon_days} Tage`],
+            ["Ø Endrendite", pct(summary.mean_terminal_return)],
+            ["VaR 95", pct(summary.value_at_risk_95)],
+            ["CVaR 95", pct(summary.conditional_value_at_risk_95)],
+            ["P95 Drawdown", pct(summary.max_drawdown_p95)],
+          ]);
+        }
       }
 
       async function api(path, options = {}) {
@@ -1407,7 +1432,10 @@
       }
 
       function pickLatestWatchlistSimulation(simulations) {
-        return (simulations || []).find((record) => latestWatchlistSymbols.includes(String(record?.metrics?.symbol || record?.inputs?.symbol || "").toUpperCase()));
+        return (simulations || []).find((record) => {
+          const symbols = record?.metrics?.symbols || [record?.metrics?.symbol || record?.inputs?.symbol];
+          return symbols.some((symbol) => latestWatchlistSymbols.includes(String(symbol || "").toUpperCase()));
+        });
       }
 
       async function refreshLivePortfolio() {
@@ -1451,10 +1479,14 @@
         ]);
         renderStatusList("#strategy", [
           ["Name", strategy.name],
+          ["Scope", strategy.strategy_scope === "multi_symbol_watchlist" ? "ganze Watchlist" : "einzeln"],
+          ["BUY", strategy.action_counts?.BUY ?? 0],
+          ["SELL", strategy.action_counts?.SELL ?? 0],
+          ["HOLD", strategy.action_counts?.HOLD ?? 0],
           ["Short Window", strategy.params?.short_window],
           ["Long Window", strategy.params?.long_window],
           ["Min Crossover", pct(strategy.params?.min_crossover_pct)],
-          ["Demo Signal", `${strategy.latest_demo_signal?.action || "-"} (${strategy.latest_demo_signal?.reason || "-"})`],
+          ["Top Signale", (strategy.latest_demo_signals || []).slice(0, 5).map((signal) => `${signal.symbol}: ${signal.action}`).join(", ") || "-"],
         ]);
         renderBalanceMetrics(status);
         renderWatchlist(watchlist);
@@ -1591,7 +1623,7 @@
           renderStatusList("#simulation", [["Status", "Simulation läuft gerade..."]]);
           const result = await api("/api/simulations/monte-carlo", {
             method: "POST",
-            body: json({ symbol: primaryWatchlistSymbol(), seed: 42, paths: 1000, horizon_days: 252, lookback_days: 252, data_source: "auto" }),
+            body: json({ symbols: latestWatchlistSymbols.slice(0, 20), seed: 42, paths: 1000, horizon_days: 252, lookback_days: 252, data_source: "auto" }),
           });
           renderMonteCarlo(result.summary);
           await refresh();

@@ -225,6 +225,40 @@ def test_monte_carlo_endpoint_returns_visualization_series(tmp_path) -> None:
     assert sum(bucket["count"] for bucket in histogram) == 200
 
 
+def test_monte_carlo_can_simulate_all_watchlist_symbols_together(tmp_path) -> None:
+    settings = Settings(
+        DATABASE_PATH=tmp_path / "test.sqlite3",
+        AUTH_ENABLED=False,
+        _env_file=None,
+    )
+    app = create_app(settings=settings, storage=Storage(settings.database_path))
+
+    with ASGITestClient(app) as client:
+        response = client.post(
+            "/api/simulations/monte-carlo",
+            json={
+                "symbols": ["ALGM", "AMKR", "TREX"],
+                "seed": 11,
+                "paths": 120,
+                "horizon_days": 30,
+                "lookback_days": 80,
+                "initial_value": 10_000,
+                "data_source": "synthetic",
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    summary = payload["summary"]
+    assert summary["symbol"] == "WATCHLIST_PORTFOLIO"
+    assert summary["portfolio_mode"] == "equal_weight_watchlist"
+    assert summary["symbols"] == ["ALGM", "AMKR", "TREX"]
+    assert len(summary["per_symbol"]) == 3
+    assert {item["symbol"] for item in summary["per_symbol"]} == {"ALGM", "AMKR", "TREX"}
+    assert len(summary["fan_chart"]) == 31
+    assert payload["simulation"]["inputs"]["portfolio_mode"] == "equal_weight_watchlist"
+
+
 
 def test_watchlist_endpoint_returns_dynamic_halal_midcap_candidates(tmp_path) -> None:
     settings = Settings(
@@ -286,8 +320,10 @@ def test_dashboard_includes_visual_chart_canvases(tmp_path) -> None:
     assert "renderMonteCarlo(pickLatestWatchlistSimulation(simulations)?.metrics)" in response.text
     assert "renderBacktest(backtests[0])" not in response.text
     assert "renderMonteCarlo(simulations[0]?.metrics)" not in response.text
-    assert 'body: json({ symbol: primaryWatchlistSymbol(), seed: 42, paths: 1000, horizon_days: 252, lookback_days: 252, data_source: "auto" })' in response.text
+    assert 'body: json({ symbols: latestWatchlistSymbols.slice(0, 20), seed: 42, paths: 1000, horizon_days: 252, lookback_days: 252, data_source: "auto" })' in response.text
     assert 'body: json({ symbol: primaryWatchlistSymbol(), days, seed: 42, initial_cash: 10000, trade_notional: 1000, data_source: dataSource })' in response.text
+    assert "Watchlist Portfolio" in response.text
+    assert "perSymbol" in response.text
     assert 'id="simulation-metrics"' in response.text
     assert "Datenquelle" in response.text
     assert 'class="status-list muted trade-scroll"' in response.text

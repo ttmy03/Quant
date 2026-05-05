@@ -260,6 +260,45 @@ def test_scheduler_uses_dynamic_halal_watchlist_when_symbols_are_omitted(tmp_pat
     assert "AAPL" not in payload["run"]["symbols"]
     assert payload["no_live_orders_sent"] is True
 
+
+def test_scheduler_can_create_multiple_simultaneous_strategy_orders(monkeypatch, tmp_path) -> None:
+    from trading_app import scheduler as scheduler_module
+    from trading_app.schemas import Signal
+
+    settings = Settings(
+        DATABASE_PATH=tmp_path / "test.sqlite3",
+        AUTH_ENABLED=False,
+        DEFAULT_SYMBOLS="ALGM,AMKR,TREX",
+        ALPACA_API_KEY="",
+        ALPACA_SECRET_KEY="",
+        MAX_DAILY_ORDERS=20,
+        _env_file=None,
+    )
+
+    class AlwaysBuyStrategy:
+        name = "test_always_buy"
+
+        def __init__(self, params=None):
+            self.params = params
+
+        def generate_signal(self, symbol, bars):
+            return Signal(symbol=symbol, action="BUY", confidence=0.95, reason="test strategy selects multiple symbols")
+
+    monkeypatch.setattr(scheduler_module, "MovingAverageCrossoverStrategy", AlwaysBuyStrategy)
+    app = create_app(settings=settings, storage=Storage(settings.database_path))
+
+    with ASGITestClient(app) as client:
+        response = client.post("/api/scheduler/run-once", json={"symbols": ["ALGM", "AMKR", "TREX"], "lookback_days": 40, "seed": 1, "qty": 1})
+        orders_response = client.get("/api/orders")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run"]["signals_count"] == 3
+    assert payload["run"]["orders_count"] == 3
+    assert [order["symbol"] for order in payload["orders"]] == ["ALGM", "AMKR", "TREX"]
+    assert all(order["dry_run"] is True for order in payload["orders"])
+    assert len(orders_response.json()) == 3
+
 def test_close_position_endpoint_records_dry_run_exit_order_even_when_entry_risk_limits_would_block(monkeypatch, tmp_path) -> None:
     settings = Settings(
         DATABASE_PATH=tmp_path / "test.sqlite3",

@@ -583,12 +583,19 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
     @app.get("/api/strategy")
     def strategy() -> dict[str, object]:
         params = app.state.strategy_params
-        bars = generate_synthetic_bars(settings.default_symbols[0] if settings.default_symbols else "AAPL")
-        signal = MovingAverageCrossoverStrategy(params).generate_signal(bars[-1].symbol, bars)
+        strategy_engine = MovingAverageCrossoverStrategy(params)
+        demo_signals = []
+        for index, symbol in enumerate(settings.default_symbols[:20] or ("ALGM",)):
+            bars = generate_synthetic_bars(symbol=symbol, seed=42 + index)
+            demo_signals.append(strategy_engine.generate_signal(symbol, bars).model_dump())
+        action_counts = Counter(signal["action"] for signal in demo_signals)
         return {
             "name": MovingAverageCrossoverStrategy.name,
             "params": params.__dict__,
-            "latest_demo_signal": signal.model_dump(),
+            "latest_demo_signal": demo_signals[0] if demo_signals else None,
+            "latest_demo_signals": demo_signals,
+            "action_counts": dict(action_counts),
+            "strategy_scope": "multi_symbol_watchlist",
         }
 
     @app.put("/api/strategy")
@@ -602,60 +609,126 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
         )
         return {"params": app.state.strategy_params.__dict__}
 
+    def _returns_for_monte_carlo_symbol(request: MonteCarloRequest, symbol: str, seed: int) -> dict[str, object]:
+        fallback_reason = None
+        data_source = "synthetic"
+        bars = []
+        if request.data_source in {"auto", "alpaca"}:
+            try:
+                bars = AlpacaClient(settings).historical_bars(symbol, days=request.lookback_days)
+            except Exception as exc:  # noqa: BLE001 - external market-data failure should not break risk simulation
+                fallback_reason = f"Alpaca historical data unavailable: {exc}"
+        if bars:
+            data_source = "alpaca"
+        else:
+            bars = generate_synthetic_bars(symbol=symbol, days=request.lookback_days, seed=seed)
+            data_source = "synthetic_fallback" if request.data_source == "alpaca" else "synthetic"
+            if request.data_source in {"auto", "alpaca"}:
+                fallback_reason = fallback_reason or "Alpaca historical data unavailable; synthetic fallback was used."
+        return {
+            "symbol": symbol,
+            "returns": returns_from_bars(bars),
+            "data_source": data_source,
+            "fallback_reason": fallback_reason,
+            "bars_count": len(bars),
+        }
+
     @app.post("/api/simulations/monte-carlo")
     def monte_carlo(request: MonteCarloRequest) -> dict[str, object]:
-        returns = request.returns
-        fallback_reason = None
-        data_source = "custom_returns" if returns is not None else "synthetic"
-        bars_count = 0
-        if returns is None:
-            bars = []
-            if request.data_source in {"auto", "alpaca"}:
-                try:
-                    bars = AlpacaClient(settings).historical_bars(request.symbol, days=request.lookback_days)
-                except Exception as exc:  # noqa: BLE001 - external market-data failure should not break risk simulation
-                    fallback_reason = f"Alpaca historical data unavailable: {exc}"
-            if bars:
-                data_source = "alpaca"
-            else:
-                bars = generate_synthetic_bars(symbol=request.symbol, days=request.lookback_days, seed=request.seed)
-                data_source = "synthetic_fallback" if request.data_source == "alpaca" else "synthetic"
-                if request.data_source in {"auto", "alpaca"}:
-                    fallback_reason = fallback_reason or "Alpaca historical data unavailable; synthetic fallback was used."
-            bars_count = len(bars)
-            returns = returns_from_bars(bars)
-        summary = simulate_portfolio_paths(
-            returns,
-            initial_value=request.initial_value,
-            horizon_days=request.horizon_days,
-            paths=request.paths,
-            seed=request.seed,
-            ruin_threshold=request.ruin_threshold,
-        ).model_copy(
-            update={
-                "symbol": request.symbol,
-                "data_source": data_source,
-                "fallback_reason": fallback_reason,
-                "bars_count": bars_count,
-            }
-        )
+        requested_symbols = request.symbols or [request.symbol]
+        requested_symbols = [symbol.upper() for symbol in requested_symbols][:20]
         inputs = request.model_dump(mode="json")
-        inputs["resolved_data_source"] = data_source
-        inputs["fallback_reason"] = fallback_reason
-        inputs["bars_count"] = bars_count
+
+        if request.returns is not None and len(requested_symbols) == 1:
+            summary = simulate_portfolio_paths(
+                request.returns,
+                initial_value=request.initial_value,
+                horizon_days=request.horizon_days,
+                paths=request.paths,
+                seed=request.seed,
+                ruin_threshold=request.ruin_threshold,
+            ).model_copy(
+                update={
+                    "symbol": requested_symbols[0],
+                    "data_source": "custom_returns",
+                    "fallback_reason": None,
+                    "bars_count": 0,
+                }
+            )
+            inputs["resolved_data_source"] = "custom_returns"
+            inputs["fallback_reason"] = None
+            inputs["bars_count"] = 0
+            metrics_payload = summary.model_dump(mode="json")
+        else:
+            symbol_payloads = [
+                _returns_for_monte_carlo_symbol(request, symbol, request.seed + index)
+                for index, symbol in enumerate(requested_symbols)
+            ]
+            return_series = [payload["returns"] for payload in symbol_payloads if payload["returns"]]
+            min_length = min((len(series) for series in return_series), default=0)
+            if min_length:
+                combined_returns = [
+                    sum(series[-min_length:][index] for series in return_series) / len(return_series)
+                    for index in range(min_length)
+                ]
+            else:
+                combined_returns = [0.0002]
+
+            portfolio_summary = simulate_portfolio_paths(
+                combined_returns,
+                initial_value=request.initial_value,
+                horizon_days=request.horizon_days,
+                paths=request.paths,
+                seed=request.seed,
+                ruin_threshold=request.ruin_threshold,
+            ).model_copy(
+                update={
+                    "symbol": "WATCHLIST_PORTFOLIO" if len(requested_symbols) > 1 else requested_symbols[0],
+                    "data_source": "mixed" if len({payload["data_source"] for payload in symbol_payloads}) > 1 else symbol_payloads[0]["data_source"],
+                    "fallback_reason": "; ".join(sorted({str(payload["fallback_reason"]) for payload in symbol_payloads if payload["fallback_reason"]})) or None,
+                    "bars_count": min((int(payload["bars_count"]) for payload in symbol_payloads), default=0),
+                }
+            )
+            per_symbol = []
+            for index, payload in enumerate(symbol_payloads):
+                symbol_summary = simulate_portfolio_paths(
+                    payload["returns"] or [0.0002],
+                    initial_value=request.initial_value,
+                    horizon_days=request.horizon_days,
+                    paths=max(100, min(request.paths, 1000)),
+                    seed=request.seed + index,
+                    ruin_threshold=request.ruin_threshold,
+                ).model_copy(
+                    update={
+                        "symbol": payload["symbol"],
+                        "data_source": payload["data_source"],
+                        "fallback_reason": payload["fallback_reason"],
+                        "bars_count": payload["bars_count"],
+                    }
+                )
+                per_symbol.append(symbol_summary.model_dump(mode="json"))
+            metrics_payload = portfolio_summary.model_dump(mode="json")
+            metrics_payload["portfolio_mode"] = "equal_weight_watchlist" if len(requested_symbols) > 1 else "single_symbol"
+            metrics_payload["symbols"] = requested_symbols
+            metrics_payload["per_symbol"] = per_symbol
+            inputs["resolved_data_source"] = metrics_payload["data_source"]
+            inputs["fallback_reason"] = metrics_payload["fallback_reason"]
+            inputs["bars_count"] = metrics_payload["bars_count"]
+            inputs["portfolio_mode"] = metrics_payload["portfolio_mode"]
+
         record = storage.record_simulation(
             "monte_carlo",
             request.seed,
             inputs,
-            summary.model_dump(mode="json"),
+            metrics_payload,
         )
         storage.record_audit(
             "simulation_completed",
             "Monte Carlo simulation completed.",
-            {"simulation_id": record["id"], "metrics": summary.model_dump(mode="json"), "data_source": data_source},
+            {"simulation_id": record["id"], "metrics": metrics_payload, "data_source": metrics_payload.get("data_source")},
             actor="codex",
         )
-        return {"simulation": record, "summary": summary.model_dump(mode="json")}
+        return {"simulation": record, "summary": metrics_payload}
 
     @app.get("/api/simulations/latest")
     def latest_simulations(limit: Annotated[int, Query(ge=1, le=100)] = 5) -> list[dict[str, object]]:
