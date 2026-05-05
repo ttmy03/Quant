@@ -49,6 +49,13 @@ PYTHONPATH=src python -m trading_app.cli run-simulation --seed 42 --paths 1000
 
 Dashboard: `http://localhost:8000`
 
+Falls Port `8000` auf einem VPS bereits belegt ist, kann der Host-Port in `.env` geaendert werden:
+
+```bash
+HOST_PORT=8010
+docker compose up --build -d
+```
+
 ## API-Auszug
 
 - `GET /health`: Healthcheck.
