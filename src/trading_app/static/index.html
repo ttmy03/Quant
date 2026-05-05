@@ -777,7 +777,7 @@
           </div>
           <div class="action-grid top-actions">
             <button class="secondary" id="run-sim" data-help="Startet eine Monte-Carlo-Simulation, um mögliche Portfolio-Pfade und Risiken sichtbar zu machen.">Monte Carlo starten</button>
-            <button class="secondary" id="run-backtest" data-help="Testet die Strategie auf Kursdaten und zeigt Rendite, Drawdown, Trades und Equity Curve.">Backtest starten</button>
+            <button class="secondary" id="run-backtest" data-help="Testet die Strategie über alle Watchlist-Ticker wie im Live-Trading: mehrere Symbole können gekauft/verkauft werden und der Graph zeigt das Gesamtportfolio.">Backtest starten</button>
             <button class="secondary" id="run-improve" data-help="Probiert Strategieparameter aus und zeigt, ob eine bessere Konfiguration gefunden wurde.">Strategie verbessern</button>
           </div>
         </div>
@@ -1388,13 +1388,14 @@
           ["Zeitraum", `${inputs.days ?? curve.length} Tage`],
           ["Datenquelle", inputs.resolved_data_source || inputs.data_source || "-"],
           ["Bars", inputs.bars_count ?? curve.length],
-          ["Trades", metrics.trades_count ?? 0],
+          ["Tickers", inputs.symbols?.length ? `${inputs.symbols.length} Symbole` : (backtest.symbol || "-")],
+          ["Trade-Ticker", metrics.trade_symbols_count ?? new Set(trades.map((trade) => trade.symbol)).size],
         ]
           .map(([label, value]) => `<div class="metric"><span class="muted">${label}</span><strong>${value}</strong></div>`)
           .join("");
         document.querySelector("#backtest-trades").innerHTML =
           trades
-            .slice(-5)
+            .slice()
             .reverse()
             .map(
               (trade) => `<tr>
@@ -1409,12 +1410,13 @@
           "backtest-equity-chart",
           [
             { color: "#0f766e", width: 2.5, points: curve.map((point, index) => ({ x: index, y: point.equity })) },
-            { color: "#f59e0b", width: 1.5, points: curve.map((point, index) => ({ x: index, y: point.close * ((metrics.final_equity || 1) / (lastPoint.close || 1)) })) },
           ],
-          { legend: [{ label: "Equity", color: "#0f766e" }, { label: "Preis skaliert", color: "#f59e0b" }] },
+          { legend: [{ label: "Gesamtportfolio Equity", color: "#0f766e" }] },
         );
         renderStatusList("#backtest-equity", [
-          ["Symbol", backtest.symbol],
+          ["Symbol", backtest.symbol === "WATCHLIST_PORTFOLIO" ? "Watchlist Portfolio" : backtest.symbol],
+          ["Getestete Ticker", (inputs.symbols || [inputs.symbol || backtest.symbol]).join(", ")],
+          ["Gekauft/verkauft", trades.length ? Array.from(new Set(trades.map((trade) => trade.symbol))).join(", ") : "-"],
           ["Anfangswert", money(initialValue)],
           ["Endwert", money(endValue)],
           ["Zeitraum", `${inputs.days ?? curve.length} Tage`],
@@ -1428,7 +1430,10 @@
       }
 
       function pickLatestWatchlistBacktest(backtests) {
-        return (backtests || []).find((record) => latestWatchlistSymbols.includes(String(record?.symbol || record?.inputs?.symbol || "").toUpperCase()));
+        return (backtests || []).find((record) => {
+          const symbols = record?.inputs?.symbols || [record?.symbol || record?.inputs?.symbol];
+          return symbols.some((symbol) => latestWatchlistSymbols.includes(String(symbol || "").toUpperCase()));
+        });
       }
 
       function pickLatestWatchlistSimulation(simulations) {
@@ -1654,7 +1659,7 @@
           daysInput.value = days;
           const result = await api("/api/backtests/run", {
             method: "POST",
-            body: json({ symbol: primaryWatchlistSymbol(), days, seed: 42, initial_cash: 10000, trade_notional: 1000, data_source: dataSource }),
+            body: json({ symbols: latestWatchlistSymbols.slice(0, 20), days, seed: 42, initial_cash: 10000, trade_notional: 1000, data_source: dataSource }),
           });
           renderBacktest(result.backtest);
           await refresh();

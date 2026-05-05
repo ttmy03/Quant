@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
-from trading_app.backtest import run_backtest
+from trading_app.backtest import run_backtest, run_portfolio_backtest
 from trading_app.schemas import Bar
 from trading_app.storage import Storage
 from trading_app.strategy import StrategyParams
@@ -51,6 +51,26 @@ def test_backtest_positive_trend_reports_sensible_metrics() -> None:
     assert result.metrics.trades_count == 1
     assert result.trades[0].side == "buy"
     assert 0 < result.metrics.exposure_pct <= 1
+
+
+def test_portfolio_backtest_runs_all_tickers_and_records_all_trades() -> None:
+    result = run_portfolio_backtest(
+        {
+            "ALGM": bars_from_prices([10, 10, 10, 10, 11, 12, 13, 14, 13, 12], "ALGM"),
+            "AMKR": bars_from_prices([20, 20, 20, 20, 22, 24, 26, 28, 26, 24], "AMKR"),
+            "TREX": bars_from_prices([30, 30, 30, 30, 33, 36, 39, 42, 39, 36], "TREX"),
+        },
+        StrategyParams(short_window=2, long_window=4, min_crossover_pct=0.001),
+        initial_cash=10_000,
+        trade_notional=1_000,
+    )
+
+    traded_symbols = {trade.symbol for trade in result.trades}
+    assert result.symbol == "WATCHLIST_PORTFOLIO"
+    assert {"ALGM", "AMKR", "TREX"}.issubset(traded_symbols)
+    assert result.metrics.trades_count == len(result.trades)
+    assert len(result.equity_curve) == 10
+    assert result.equity_curve[-1].equity > 0
 
 
 def test_storage_roundtrips_backtest_result(tmp_path) -> None:

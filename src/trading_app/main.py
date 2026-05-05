@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from trading_app.alpaca import AlpacaClient
 from trading_app.auth import AuthService, auth_state
-from trading_app.backtest import run_backtest
+from trading_app.backtest import run_backtest, run_portfolio_backtest
 from trading_app.config import Settings, get_settings
 from trading_app.data import generate_synthetic_bars, returns_from_bars
 from trading_app.improver import RecursiveImprover
@@ -734,6 +734,30 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
     def latest_simulations(limit: Annotated[int, Query(ge=1, le=100)] = 5) -> list[dict[str, object]]:
         return storage.list_simulations(limit=limit)
 
+    def _bars_for_backtest_symbol(request: BacktestRequest, symbol: str, seed: int) -> dict[str, object]:
+        fallback_reason = None
+        data_source = "synthetic"
+        bars = []
+        if request.data_source in {"auto", "alpaca"}:
+            try:
+                bars = AlpacaClient(settings).historical_bars(symbol, days=request.days)
+            except Exception as exc:  # noqa: BLE001 - external market-data failure should not break research mode
+                fallback_reason = f"Alpaca historical data unavailable: {exc}"
+        if bars:
+            data_source = "alpaca"
+        else:
+            bars = generate_synthetic_bars(symbol=symbol, days=request.days, seed=seed)
+            data_source = "synthetic_fallback" if request.data_source == "alpaca" else "synthetic"
+            if request.data_source in {"auto", "alpaca"}:
+                fallback_reason = fallback_reason or "Alpaca historical data unavailable; synthetic fallback was used."
+        return {
+            "symbol": symbol,
+            "bars": bars,
+            "data_source": data_source,
+            "fallback_reason": fallback_reason,
+            "bars_count": len(bars),
+        }
+
     @app.post("/api/backtests/run")
     def run_backtest_endpoint(request: BacktestRequest) -> dict[str, object]:
         params = (
@@ -741,47 +765,74 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
             if request.strategy is not None
             else app.state.strategy_params
         )
-        fallback_reason = None
-        data_source = "synthetic"
-        if request.data_source in {"auto", "alpaca"}:
-            try:
-                alpaca_bars = AlpacaClient(settings).historical_bars(request.symbol, days=request.days)
-            except Exception as exc:  # noqa: BLE001 - external market-data failure should not break research mode
-                alpaca_bars = []
-                fallback_reason = f"Alpaca historical data unavailable: {exc}"
-            if alpaca_bars:
-                bars = alpaca_bars
-                data_source = "alpaca"
-            else:
-                bars = generate_synthetic_bars(symbol=request.symbol, days=request.days, seed=request.seed)
-                data_source = "synthetic_fallback" if request.data_source == "alpaca" else "synthetic"
-                fallback_reason = fallback_reason or "Alpaca historical data unavailable; synthetic fallback was used."
-        else:
-            bars = generate_synthetic_bars(symbol=request.symbol, days=request.days, seed=request.seed)
+        requested_symbols = request.symbols or [request.symbol]
+        requested_symbols = [symbol.upper() for symbol in requested_symbols][:20]
+        symbol_payloads = [
+            _bars_for_backtest_symbol(request, symbol, request.seed + index)
+            for index, symbol in enumerate(requested_symbols)
+        ]
+        bars_by_symbol = {str(payload["symbol"]): payload["bars"] for payload in symbol_payloads}
+        data_sources = {str(payload["data_source"]) for payload in symbol_payloads}
+        data_source = "mixed" if len(data_sources) > 1 else next(iter(data_sources), "synthetic")
+        fallback_reason = "; ".join(
+            sorted({str(payload["fallback_reason"]) for payload in symbol_payloads if payload["fallback_reason"]})
+        ) or None
+        bars_count = min((int(payload["bars_count"]) for payload in symbol_payloads), default=0)
 
         inputs = request.model_dump(mode="json")
+        inputs["symbols"] = requested_symbols
+        inputs["portfolio_mode"] = "multi_symbol_watchlist" if len(requested_symbols) > 1 else "single_symbol"
         inputs["resolved_data_source"] = data_source
         inputs["fallback_reason"] = fallback_reason
-        inputs["bars_count"] = len(bars)
-        result = run_backtest(
-            bars,
-            params,
-            initial_cash=request.initial_cash,
-            trade_notional=request.trade_notional,
-        )
+        inputs["bars_count"] = bars_count
+        inputs["per_symbol"] = [
+            {
+                "symbol": payload["symbol"],
+                "data_source": payload["data_source"],
+                "fallback_reason": payload["fallback_reason"],
+                "bars_count": payload["bars_count"],
+            }
+            for payload in symbol_payloads
+        ]
+
+        if len(requested_symbols) > 1:
+            result = run_portfolio_backtest(
+                bars_by_symbol,
+                params,
+                initial_cash=request.initial_cash,
+                trade_notional=request.trade_notional,
+            )
+        else:
+            result = run_backtest(
+                bars_by_symbol[requested_symbols[0]],
+                params,
+                initial_cash=request.initial_cash,
+                trade_notional=request.trade_notional,
+            )
+
         result_payload = result.model_dump(mode="json")
+        result_payload["symbols"] = requested_symbols
+        result_payload["portfolio_mode"] = inputs["portfolio_mode"]
+        result_payload["per_symbol"] = inputs["per_symbol"]
+        trade_symbols = sorted({trade.symbol for trade in result.trades})
+        result_payload["trade_symbols"] = trade_symbols
+        result_payload["trade_symbol_counts"] = dict(Counter(trade.symbol for trade in result.trades))
+        metrics_payload = result.metrics.model_dump(mode="json")
+        metrics_payload["symbols_count"] = len(requested_symbols)
+        metrics_payload["trade_symbols_count"] = len(trade_symbols)
+
         record = storage.record_backtest(
             result.strategy_name,
             result.symbol,
             inputs,
-            result.metrics.model_dump(mode="json"),
+            metrics_payload,
             [trade.model_dump(mode="json") for trade in result.trades],
             [point.model_dump(mode="json") for point in result.equity_curve],
         )
         storage.record_audit(
             "backtest_completed",
-            "Backtest completed.",
-            {"backtest_id": record["id"], "metrics": result.metrics.model_dump(mode="json"), "data_source": data_source},
+            "Portfolio backtest completed." if len(requested_symbols) > 1 else "Backtest completed.",
+            {"backtest_id": record["id"], "metrics": metrics_payload, "data_source": data_source, "symbols": requested_symbols},
             actor="codex",
         )
         return {
@@ -789,7 +840,7 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
             "result": result_payload,
             "data_source": data_source,
             "fallback_reason": fallback_reason,
-            "bars_count": len(bars),
+            "bars_count": bars_count,
         }
 
     @app.get("/api/backtests/latest")

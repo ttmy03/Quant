@@ -167,6 +167,42 @@ def test_backtest_endpoint_runs_and_persists_when_auth_disabled(tmp_path) -> Non
     assert payload["bars_count"] == 80
 
 
+def test_backtest_endpoint_can_run_watchlist_portfolio(tmp_path) -> None:
+    settings = Settings(
+        DATABASE_PATH=tmp_path / "test.sqlite3",
+        AUTH_ENABLED=False,
+        _env_file=None,
+    )
+    app = create_app(settings=settings, storage=Storage(settings.database_path))
+
+    with ASGITestClient(app) as client:
+        response = client.post(
+            "/api/backtests/run",
+            json={
+                "symbols": ["ALGM", "AMKR", "TREX"],
+                "days": 80,
+                "seed": 42,
+                "initial_cash": 10_000,
+                "trade_notional": 1_000,
+                "data_source": "synthetic",
+                "strategy": {"short_window": 3, "long_window": 8, "min_crossover_pct": 0.0},
+            },
+        )
+        latest_response = client.get("/api/backtests/latest")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["result"]["symbol"] == "WATCHLIST_PORTFOLIO"
+    assert payload["result"]["portfolio_mode"] == "multi_symbol_watchlist"
+    assert payload["backtest"]["inputs"]["symbols"] == ["ALGM", "AMKR", "TREX"]
+    assert payload["backtest"]["inputs"]["portfolio_mode"] == "multi_symbol_watchlist"
+    assert payload["backtest"]["metrics"]["symbols_count"] == 3
+    assert payload["backtest"]["metrics"]["trades_count"] == len(payload["backtest"]["trades"])
+    assert {trade["symbol"] for trade in payload["backtest"]["trades"]}.issubset({"ALGM", "AMKR", "TREX"})
+    assert len(payload["backtest"]["equity_curve"]) == 80
+    assert latest_response.json()[0]["symbol"] == "WATCHLIST_PORTFOLIO"
+
+
 def test_backtest_endpoint_reports_alpaca_fallback_when_requested_without_credentials(tmp_path) -> None:
     settings = Settings(
         DATABASE_PATH=tmp_path / "test.sqlite3",
@@ -321,7 +357,9 @@ def test_dashboard_includes_visual_chart_canvases(tmp_path) -> None:
     assert "renderBacktest(backtests[0])" not in response.text
     assert "renderMonteCarlo(simulations[0]?.metrics)" not in response.text
     assert 'body: json({ symbols: latestWatchlistSymbols.slice(0, 20), seed: 42, paths: 1000, horizon_days: 252, lookback_days: 252, data_source: "auto" })' in response.text
-    assert 'body: json({ symbol: primaryWatchlistSymbol(), days, seed: 42, initial_cash: 10000, trade_notional: 1000, data_source: dataSource })' in response.text
+    assert 'body: json({ symbols: latestWatchlistSymbols.slice(0, 20), days, seed: 42, initial_cash: 10000, trade_notional: 1000, data_source: dataSource })' in response.text
+    assert "Gesamtportfolio Equity" in response.text
+    assert "Gekauft/verkauft" in response.text
     assert "Watchlist Portfolio" in response.text
     assert "perSymbol" in response.text
     assert 'id="simulation-metrics"' in response.text

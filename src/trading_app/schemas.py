@@ -179,7 +179,8 @@ class MonteCarloSummary(BaseModel):
 
 
 class BacktestRequest(BaseModel):
-    symbol: str = "AAPL"
+    symbol: str = "ALGM"
+    symbols: list[str] | None = None
     days: int = Field(default=252, ge=1, le=5000)
     seed: int = 42
     initial_cash: float = Field(default=10_000.0, gt=0)
@@ -191,6 +192,18 @@ class BacktestRequest(BaseModel):
     @classmethod
     def uppercase_symbol(cls, value: str) -> str:
         return value.upper()
+
+    @field_validator("symbols")
+    @classmethod
+    def uppercase_symbols(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        seen: list[str] = []
+        for symbol in value:
+            normalized = symbol.strip().upper()
+            if normalized and normalized not in seen:
+                seen.append(normalized)
+        return seen[:20]
 
 
 class BacktestTrade(BaseModel):
