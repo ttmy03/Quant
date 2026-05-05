@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Paper Quant Dashboard</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f7f9;
+        --panel: #ffffff;
+        --ink: #1d2433;
+        --muted: #647084;
+        --line: #dce2ea;
+        --accent: #0f766e;
+        --accent-dark: #115e59;
+        --warn: #a16207;
+        --danger: #b91c1c;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      header {
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+        padding: 18px 24px;
+      }
+      header h1 {
+        margin: 0 0 4px;
+        font-size: 22px;
+        letter-spacing: 0;
+      }
+      header p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      main {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(12, 1fr);
+        padding: 20px 24px 32px;
+      }
+      section {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 16px;
+        min-width: 0;
+      }
+      h2 {
+        margin: 0 0 12px;
+        font-size: 16px;
+        letter-spacing: 0;
+      }
+      button,
+      input,
+      select {
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        font: inherit;
+        min-height: 36px;
+      }
+      button {
+        background: var(--accent);
+        color: #fff;
+        cursor: pointer;
+        padding: 0 12px;
+      }
+      button.secondary {
+        background: #fff;
+        color: var(--accent-dark);
+      }
+      input,
+      select {
+        background: #fff;
+        color: var(--ink);
+        padding: 0 10px;
+        width: 100%;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      th,
+      td {
+        border-bottom: 1px solid var(--line);
+        font-size: 13px;
+        padding: 8px;
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        color: var(--muted);
+        font-weight: 600;
+      }
+      pre {
+        background: #f1f4f8;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        margin: 0;
+        overflow: auto;
+        padding: 12px;
+        white-space: pre-wrap;
+      }
+      .span-4 {
+        grid-column: span 4;
+      }
+      .span-6 {
+        grid-column: span 6;
+      }
+      .span-8 {
+        grid-column: span 8;
+      }
+      .span-12 {
+        grid-column: span 12;
+      }
+      .toolbar,
+      .form-grid {
+        display: grid;
+        gap: 10px;
+      }
+      .toolbar {
+        grid-template-columns: repeat(3, max-content);
+        margin-bottom: 12px;
+      }
+      .form-grid {
+        grid-template-columns: repeat(5, minmax(90px, 1fr));
+      }
+      .metric-grid {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: repeat(4, minmax(120px, 1fr));
+      }
+      .metric {
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 10px;
+      }
+      .metric strong {
+        display: block;
+        font-size: 18px;
+        margin-top: 4px;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .danger {
+        color: var(--danger);
+      }
+      .warn {
+        color: var(--warn);
+      }
+      @media (max-width: 900px) {
+        main,
+        .form-grid,
+        .metric-grid {
+          grid-template-columns: 1fr;
+        }
+        .span-4,
+        .span-6,
+        .span-8,
+        .span-12 {
+          grid-column: span 1;
+        }
+        .toolbar {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Paper Quant Dashboard</h1>
+      <p>Research- und Paper-Trading-Scaffold. Keine Finanzberatung. Live-Geld ist standardmaessig blockiert.</p>
+    </header>
+
+    <main>
+      <section class="span-8">
+        <h2>Portfolio und Status</h2>
+        <div class="toolbar">
+          <button id="refresh">Aktualisieren</button>
+          <button class="secondary" id="run-sim">Monte Carlo</button>
+          <button class="secondary" id="run-improve">Verbessern</button>
+        </div>
+        <div class="metric-grid" id="metrics"></div>
+      </section>
+
+      <section class="span-4">
+        <h2>Sicherheitsmodus</h2>
+        <pre id="config">Laedt...</pre>
+      </section>
+
+      <section class="span-6">
+        <h2>Dry-Run Order</h2>
+        <form class="form-grid" id="order-form">
+          <input name="symbol" value="AAPL" aria-label="Symbol" />
+          <select name="side" aria-label="Seite">
+            <option value="buy">buy</option>
+            <option value="sell">sell</option>
+          </select>
+          <input name="qty" type="number" min="0.001" step="0.001" value="1" aria-label="Menge" />
+          <select name="order_type" aria-label="Ordertyp">
+            <option value="market">market</option>
+            <option value="limit">limit</option>
+          </select>
+          <button type="submit">Senden</button>
+        </form>
+        <pre id="order-result" class="muted">Noch keine Order.</pre>
+      </section>
+
+      <section class="span-6">
+        <h2>Strategie</h2>
+        <pre id="strategy">Laedt...</pre>
+      </section>
+
+      <section class="span-6">
+        <h2>Monte Carlo Zusammenfassung</h2>
+        <pre id="simulation">Noch keine Simulation.</pre>
+      </section>
+
+      <section class="span-6">
+        <h2>Audit Events</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Zeit</th>
+              <th>Typ</th>
+              <th>Nachricht</th>
+            </tr>
+          </thead>
+          <tbody id="audit"></tbody>
+        </table>
+      </section>
+
+      <section class="span-12">
+        <h2>Orders</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Zeit</th>
+              <th>Symbol</th>
+              <th>Seite</th>
+              <th>Menge</th>
+              <th>Status</th>
+              <th>Dry Run</th>
+            </tr>
+          </thead>
+          <tbody id="orders"></tbody>
+        </table>
+      </section>
+    </main>
+
+    <script>
+      const json = (value) => JSON.stringify(value, null, 2);
+
+      async function api(path, options = {}) {
+        const response = await fetch(path, {
+          headers: { "Content-Type": "application/json" },
+          ...options,
+        });
+        if (!response.ok) {
+          throw new Error(`${response.status} ${await response.text()}`);
+        }
+        return response.json();
+      }
+
+      function renderMetrics(status) {
+        const account = status.account || {};
+        const bars = status.latest_bars || [];
+        document.querySelector("#metrics").innerHTML = [
+          ["Alpaca", account.status || "unknown"],
+          ["Paper Endpoint", account.paper_endpoint ? "ja" : "nein"],
+          ["Symbole", bars.map((bar) => bar.symbol).join(", ") || "-"],
+          ["Letzter Preis", bars[0] ? bars[0].close.toFixed(2) : "-"],
+        ]
+          .map(([label, value]) => `<div class="metric"><span class="muted">${label}</span><strong>${value}</strong></div>`)
+          .join("");
+      }
+
+      function renderOrders(orders) {
+        document.querySelector("#orders").innerHTML = orders
+          .map(
+            (order) => `<tr>
+              <td>${order.created_at}</td>
+              <td>${order.symbol}</td>
+              <td>${order.side}</td>
+              <td>${order.qty}</td>
+              <td>${order.status}</td>
+              <td>${order.dry_run}</td>
+            </tr>`,
+          )
+          .join("");
+      }
+
+      function renderAudit(events) {
+        document.querySelector("#audit").innerHTML = events
+          .map((event) => `<tr><td>${event.created_at}</td><td>${event.event_type}</td><td>${event.message}</td></tr>`)
+          .join("");
+      }
+
+      async function refresh() {
+        const [config, status, strategy, orders, audit] = await Promise.all([
+          api("/api/config"),
+          api("/api/portfolio/status"),
+          api("/api/strategy"),
+          api("/api/orders"),
+          api("/api/audit-events"),
+        ]);
+        document.querySelector("#config").textContent = json(config);
+        document.querySelector("#strategy").textContent = json(strategy);
+        renderMetrics(status);
+        renderOrders(orders);
+        renderAudit(audit);
+      }
+
+      document.querySelector("#refresh").addEventListener("click", refresh);
+      document.querySelector("#run-sim").addEventListener("click", async () => {
+        const result = await api("/api/simulations/monte-carlo", {
+          method: "POST",
+          body: json({ seed: 42, paths: 1000, horizon_days: 252 }),
+        });
+        document.querySelector("#simulation").textContent = json(result.summary);
+        await refresh();
+      });
+      document.querySelector("#run-improve").addEventListener("click", async () => {
+        const result = await api("/api/improvement/run", {
+          method: "POST",
+          body: json({ symbol: "AAPL", days: 180, seed: 42 }),
+        });
+        document.querySelector("#strategy").textContent = json(result);
+        await refresh();
+      });
+      document.querySelector("#order-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const form = new FormData(event.target);
+        const body = Object.fromEntries(form.entries());
+        body.qty = Number(body.qty);
+        const result = await api("/api/orders", { method: "POST", body: json(body) });
+        document.querySelector("#order-result").textContent = json(result);
+        await refresh();
+      });
+
+      refresh().catch((error) => {
+        document.querySelector("#config").textContent = error.message;
+      });
+    </script>
+  </body>
+</html>
