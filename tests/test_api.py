@@ -237,6 +237,9 @@ def test_dashboard_includes_visual_chart_canvases(tmp_path) -> None:
     assert 'id="positions-table"' in response.text
     assert 'id="daily-report"' in response.text
     assert 'id="alerts"' in response.text
+    assert "<pre" not in response.text
+    assert "renderStatusList" in response.text
+    assert "renderDetailGrid" in response.text
     assert "/api/trading-control/kill-switch" in response.text
     assert "/api/scheduler/run-once" in response.text
     assert "/api/alerts" in response.text

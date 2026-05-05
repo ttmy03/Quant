@@ -123,14 +123,76 @@
         color: var(--muted);
         font-weight: 600;
       }
-      pre {
-        background: #f1f4f8;
+      .detail-card,
+      .status-box,
+      .empty-state {
+        background: #f8fafc;
         border: 1px solid var(--line);
-        border-radius: 6px;
-        margin: 0;
-        overflow: auto;
+        border-radius: 8px;
         padding: 12px;
-        white-space: pre-wrap;
+      }
+      .detail-grid {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: repeat(2, minmax(110px, 1fr));
+      }
+      .detail-card span,
+      .status-box span {
+        color: var(--muted);
+        display: block;
+        font-size: 12px;
+        margin-bottom: 4px;
+      }
+      .detail-card strong,
+      .status-box strong {
+        display: block;
+        font-size: 15px;
+        overflow-wrap: anywhere;
+      }
+      .status-box {
+        margin-top: 10px;
+      }
+      .status-list {
+        display: grid;
+        gap: 8px;
+      }
+      .status-row {
+        align-items: flex-start;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        gap: 12px;
+        justify-content: space-between;
+        padding: 8px 0;
+      }
+      .status-row:last-child {
+        border-bottom: 0;
+      }
+      .status-row .label {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .status-row .value {
+        font-weight: 600;
+        text-align: right;
+      }
+      .badge {
+        border-radius: 999px;
+        display: inline-flex;
+        font-size: 12px;
+        font-weight: 700;
+        padding: 4px 8px;
+      }
+      .badge.ok {
+        background: #dcfce7;
+        color: #166534;
+      }
+      .badge.warn {
+        background: #fef3c7;
+        color: #92400e;
+      }
+      .badge.danger {
+        background: #fee2e2;
+        color: #991b1b;
       }
       .span-4 {
         grid-column: span 4;
@@ -269,7 +331,7 @@
 
       <section class="span-4">
         <h2>Sicherheitsmodus</h2>
-        <pre id="config">Laedt...</pre>
+        <div class="detail-grid" id="config">Laedt...</div>
       </section>
 
       <section class="span-4" id="trading-control-card">
@@ -281,8 +343,8 @@
           <button class="secondary" id="resume-trading">Resume</button>
           <button id="run-scheduler-once">Scheduler</button>
         </div>
-        <pre id="trading-control">Laedt...</pre>
-        <pre id="scheduler-result" class="muted">Noch kein Scheduler-Lauf.</pre>
+        <div class="detail-grid" id="trading-control">Laedt...</div>
+        <div id="scheduler-result" class="status-box muted">Noch kein Scheduler-Lauf.</div>
       </section>
 
       <section class="span-6">
@@ -300,12 +362,12 @@
           </select>
           <button type="submit">Senden</button>
         </form>
-        <pre id="order-result" class="muted">Noch keine Order.</pre>
+        <div id="order-result" class="status-box muted">Noch keine Order.</div>
       </section>
 
       <section class="span-6">
         <h2>Strategie</h2>
-        <pre id="strategy">Laedt...</pre>
+        <div id="strategy" class="status-list">Laedt...</div>
       </section>
 
       <section class="span-6">
@@ -321,7 +383,7 @@
             <canvas id="monte-carlo-histogram" width="360" height="260" aria-label="Monte Carlo Histogramm"></canvas>
           </div>
         </div>
-        <pre id="simulation" class="muted">Noch keine Simulation.</pre>
+        <div id="simulation" class="status-box muted">Noch keine Simulation.</div>
       </section>
 
       <section class="span-6">
@@ -342,7 +404,7 @@
           </thead>
           <tbody id="backtest-trades"></tbody>
         </table>
-        <pre id="backtest-equity" class="muted">Noch kein Backtest.</pre>
+        <div id="backtest-equity" class="status-box muted">Noch kein Backtest.</div>
       </section>
 
       <section class="span-6">
@@ -362,12 +424,12 @@
       <section class="span-6">
         <h2>Daily Report</h2>
         <button class="secondary" id="load-daily-report">Aktualisieren</button>
-        <pre id="daily-report" class="muted">Noch kein Report.</pre>
+        <div id="daily-report" class="status-list muted">Noch kein Report.</div>
       </section>
 
       <section class="span-6">
         <h2>Alerts</h2>
-        <pre id="alerts" class="muted">Keine Alerts geladen.</pre>
+        <div id="alerts" class="status-list muted">Keine Alerts geladen.</div>
       </section>
 
       <section class="span-12">
@@ -392,6 +454,38 @@
       const json = (value) => JSON.stringify(value, null, 2);
       const money = (value) => (Number.isFinite(Number(value)) ? Number(value).toFixed(2) : "-");
       const pct = (value) => (Number.isFinite(Number(value)) ? `${(Number(value) * 100).toFixed(2)}%` : "-");
+      const yesNo = (value) => (value ? "Ja" : "Nein");
+      const safe = (value) => value ?? "-";
+
+      function badge(label, state = "ok") {
+        return `<span class="badge ${state}">${label}</span>`;
+      }
+
+      function renderDetailGrid(selector, items) {
+        document.querySelector(selector).innerHTML = items
+          .map(([label, value]) => `<div class="detail-card"><span>${label}</span><strong>${value}</strong></div>`)
+          .join("");
+      }
+
+      function renderStatusList(selector, items, emptyText = "Keine Daten.") {
+        const element = document.querySelector(selector);
+        if (!items || !items.length) {
+          element.innerHTML = `<div class="empty-state">${emptyText}</div>`;
+          return;
+        }
+        element.innerHTML = items
+          .map(([label, value]) => `<div class="status-row"><div class="label">${label}</div><div class="value">${value}</div></div>`)
+          .join("");
+      }
+
+      function renderNotice(selector, title, rows = [], state = "ok") {
+        document.querySelector(selector).innerHTML = `
+          <span>${title}</span>
+          <strong>${badge(state === "danger" ? "Blockiert" : state === "warn" ? "Hinweis" : "OK", state)}</strong>
+          <div class="status-list">
+            ${rows.map(([label, value]) => `<div class="status-row"><div class="label">${label}</div><div class="value">${value}</div></div>`).join("")}
+          </div>`;
+      }
 
       function canvasContext(id) {
         const canvas = document.querySelector(`#${id}`);
@@ -517,15 +611,15 @@
           { legend: [{ label: "P05", color: "#ef4444" }, { label: "Median", color: "#0f766e" }, { label: "P95", color: "#2563eb" }] },
         );
         renderHistogram("monte-carlo-histogram", summary.terminal_value_histogram || []);
-        document.querySelector("#simulation").textContent = json({
-          seed: summary.seed,
-          paths: summary.paths,
-          horizon_days: summary.horizon_days,
-          mean_terminal_return: pct(summary.mean_terminal_return),
-          var_95: pct(summary.value_at_risk_95),
-          cvar_95: pct(summary.conditional_value_at_risk_95),
-          max_drawdown_p95: pct(summary.max_drawdown_p95),
-        });
+        renderStatusList("#simulation", [
+          ["Seed", summary.seed],
+          ["Pfade", summary.paths],
+          ["Horizont", `${summary.horizon_days} Tage`],
+          ["Ø Endrendite", pct(summary.mean_terminal_return)],
+          ["VaR 95", pct(summary.value_at_risk_95)],
+          ["CVaR 95", pct(summary.conditional_value_at_risk_95)],
+          ["P95 Drawdown", pct(summary.max_drawdown_p95)],
+        ]);
       }
 
       async function api(path, options = {}) {
@@ -585,26 +679,28 @@
       }
 
       function renderTradingControl(control) {
-        document.querySelector("#trading-control").textContent = json({
-          can_trade: control.can_trade,
-          kill_switch_active: control.kill_switch_active,
-          paused: control.paused,
-          reason: control.reason,
-          updated_at: control.updated_at,
-        });
+        renderDetailGrid("#trading-control", [
+          ["Status", control.can_trade ? badge("Freigegeben", "ok") : badge("Blockiert", "danger")],
+          ["Kill-Switch", control.kill_switch_active ? badge("Aktiv", "danger") : badge("Aus", "ok")],
+          ["Pause", control.paused ? badge("Pausiert", "warn") : badge("Läuft", "ok")],
+          ["Grund", safe(control.reason) || "-"],
+          ["Aktualisiert", safe(control.updated_at)],
+          ["Aktor", safe(control.updated_by)],
+        ]);
       }
 
       function renderDailyReport(report) {
-        document.querySelector("#daily-report").textContent = json({
-          date: report.date,
-          portfolio: report.portfolio?.summary,
-          orders: report.orders,
-          backtests: { count: report.backtests?.count },
-          simulations: { count: report.simulations?.count },
-          audit_events: report.audit_events,
-          alerts: report.alerts,
-          safety: report.safety,
-        });
+        renderStatusList("#daily-report", [
+          ["Datum", report.date],
+          ["Portfolio Quelle", safe(report.portfolio?.summary?.source)],
+          ["Orders", report.orders?.count ?? 0],
+          ["Dry-Run Orders", report.orders?.dry_run_count ?? 0],
+          ["Backtests", report.backtests?.count ?? 0],
+          ["Simulationen", report.simulations?.count ?? 0],
+          ["Audit Events", report.audit_events?.count ?? 0],
+          ["Alerts", report.alerts?.count ?? 0],
+          ["Safety", `${report.safety?.dry_run ? "Dry Run" : "Dry Run aus"} / ${report.safety?.paper_trading_only ? "Paper Only" : "Paper Guard aus"}`],
+        ]);
       }
 
       function renderOrders(orders) {
@@ -629,15 +725,17 @@
       }
 
       function renderAlerts(alerts) {
-        document.querySelector("#alerts").textContent = alerts && alerts.length
-          ? json(alerts.map((alert) => ({
-              severity: alert.severity,
-              category: alert.category,
-              title: alert.title,
-              message: alert.message,
-              created_at: alert.created_at,
-            })))
-          : "Keine aktiven Alerts.";
+        if (!alerts || !alerts.length) {
+          renderStatusList("#alerts", [], "Keine aktiven Alerts.");
+          return;
+        }
+        document.querySelector("#alerts").innerHTML = alerts
+          .map((alert) => `<div class="status-box">
+            <span>${alert.category}</span>
+            <strong>${badge(alert.severity === "critical" ? "Kritisch" : "Warnung", alert.severity === "critical" ? "danger" : "warn")} ${alert.title}</strong>
+            <div class="muted">${alert.message}</div>
+          </div>`)
+          .join("");
       }
 
       function renderBacktest(backtest) {
@@ -685,16 +783,16 @@
           ],
           { legend: [{ label: "Equity", color: "#0f766e" }, { label: "Preis skaliert", color: "#f59e0b" }] },
         );
-        document.querySelector("#backtest-equity").textContent = json({
-          symbol: backtest.symbol,
-          buy_and_hold_return: pct(metrics.buy_and_hold_return),
-          exposure: pct(metrics.exposure_pct),
-          data_source_requested: inputs.data_source,
-          data_source_used: inputs.resolved_data_source,
-          fallback_reason: inputs.fallback_reason,
-          bars_count: inputs.bars_count,
-          last_equity_point: lastPoint,
-        });
+        renderStatusList("#backtest-equity", [
+          ["Symbol", backtest.symbol],
+          ["Buy & Hold", pct(metrics.buy_and_hold_return)],
+          ["Exposure", pct(metrics.exposure_pct)],
+          ["Angefragt", safe(inputs.data_source)],
+          ["Genutzt", safe(inputs.resolved_data_source)],
+          ["Fallback", inputs.fallback_reason || "-"],
+          ["Bars", inputs.bars_count ?? curve.length],
+          ["Letzte Equity", money(lastPoint.equity)],
+        ]);
       }
 
       async function refresh() {
@@ -712,8 +810,21 @@
           api("/api/reports/daily"),
         ]);
         renderAuthState(auth);
-        document.querySelector("#config").textContent = json(config);
-        document.querySelector("#strategy").textContent = json(strategy);
+        renderDetailGrid("#config", [
+          ["Dry Run", config.dry_run ? badge("Aktiv", "ok") : badge("Aus", "danger")],
+          ["Paper Only", config.paper_trading_only ? badge("Aktiv", "ok") : badge("Aus", "danger")],
+          ["Alpaca", config.alpaca_configured ? badge("Konfiguriert", "ok") : badge("Fallback", "warn")],
+          ["Max Order", money(config.max_order_notional)],
+          ["Max Tagesorders", config.max_daily_orders],
+          ["Symbole", (config.default_symbols || []).join(", ") || "-"],
+        ]);
+        renderStatusList("#strategy", [
+          ["Name", strategy.name],
+          ["Short Window", strategy.params?.short_window],
+          ["Long Window", strategy.params?.long_window],
+          ["Min Crossover", pct(strategy.params?.min_crossover_pct)],
+          ["Demo Signal", `${strategy.latest_demo_signal?.action || "-"} (${strategy.latest_demo_signal?.reason || "-"})`],
+        ]);
         renderMetrics(status);
         renderPositions(status.positions);
         renderTradingControl(control);
@@ -759,7 +870,12 @@
           method: "POST",
           body: json({}),
         });
-        document.querySelector("#scheduler-result").textContent = json(result);
+        renderNotice("#scheduler-result", "Scheduler-Lauf", [
+          ["Status", result.run?.status || "-"],
+          ["Signale", result.signals?.length ?? 0],
+          ["Orders", result.orders?.length ?? 0],
+          ["Live Orders", result.no_live_orders_sent ? "Keine" : "Achtung"],
+        ], result.run?.status === "completed" ? "ok" : "warn");
         await refresh();
       });
       document.querySelector("#load-daily-report").addEventListener("click", async () => {
@@ -778,7 +894,12 @@
           method: "POST",
           body: json({ symbol: "AAPL", days: 180, seed: 42 }),
         });
-        document.querySelector("#strategy").textContent = json(result);
+        renderStatusList("#strategy", [
+          ["Promoted", yesNo(result.promoted)],
+          ["Beste Rendite", pct(result.best_candidate?.metrics?.total_return)],
+          ["Kandidaten", result.candidates?.length ?? 0],
+          ["Ausgewählte Parameter", result.selected_params ? `S${result.selected_params.short_window} / L${result.selected_params.long_window}` : "-"],
+        ]);
         await refresh();
       });
       document.querySelector("#run-backtest").addEventListener("click", async () => {
@@ -796,12 +917,17 @@
         const body = Object.fromEntries(form.entries());
         body.qty = Number(body.qty);
         const result = await api("/api/orders", { method: "POST", body: json(body) });
-        document.querySelector("#order-result").textContent = json(result);
+        renderNotice("#order-result", "Order", [
+          ["Status", result.submission?.status || "-"],
+          ["Dry Run", yesNo(result.submission?.dry_run)],
+          ["Risk", result.risk?.allowed ? "erlaubt" : "blockiert"],
+          ["Nachricht", result.submission?.message || "-"],
+        ], result.submission?.accepted ? "ok" : "warn");
         await refresh();
       });
 
       refresh().catch((error) => {
-        document.querySelector("#config").textContent = error.message;
+        document.querySelector("#config").innerHTML = `<div class="empty-state danger">${error.message}</div>`;
       });
     </script>
   </body>
