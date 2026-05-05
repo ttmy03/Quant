@@ -752,10 +752,10 @@
           <section class="span-12" id="watchlist-card">
             <div class="section-header">
               <div>
-                <h3>Dynamische Halal Midcap Watchlist</h3>
-                <p class="helper-text">20 vorausgewählte, qualitativ halal-geprüfte Midcap-Kandidaten. Die Rangfolge wird dynamisch über aktuelle Preise, Margin of Safety und Score neu berechnet.</p>
+                <h3>Dynamische Halal Large-Cap Watchlist</h3>
+                <p class="helper-text">20 vorausgewählte, qualitativ halal-geprüfte Large-Cap-Kandidaten aus einem MSCI-World-ähnlichen Developed-Market-Universum mit verschiedenen Sektoren. Die Rangfolge wird dynamisch über aktuelle Preise, Margin of Safety und Score neu berechnet.</p>
               </div>
-              <button class="secondary" id="refresh-watchlist" data-help="Bewertet die 20 Halal-Midcap-Kandidaten mit aktuellen Kursen neu und sortiert die Watchlist dynamisch nach Unterbewertung.">Watchlist neu bewerten</button>
+              <button class="secondary" id="refresh-watchlist" data-help="Bewertet die 20 Halal-Large-Cap-Kandidaten aus einem MSCI-World-ähnlichen Universum mit aktuellen Kursen neu und sortiert die Watchlist dynamisch nach Unterbewertung.">Watchlist neu bewerten</button>
             </div>
             <div class="metric-grid compact-metrics" id="watchlist-metrics"></div>
             <p class="live-indicator" id="watchlist-updated">Watchlist wird geladen...</p>
@@ -893,7 +893,7 @@
             <h3>Manuelle Dry-Run Order</h3>
             <p class="helper-text">Zum Testen des Order- und Risk-Flows. Keine echte Börsenorder.</p>
             <form class="form-grid" id="order-form">
-              <input name="symbol" value="ALGM" aria-label="Symbol" />
+              <input name="symbol" value="MSFT" aria-label="Symbol" />
               <select name="side" aria-label="Seite">
                 <option value="buy">Kaufen</option>
                 <option value="sell">Verkaufen</option>
@@ -979,7 +979,7 @@
     <script>
       const json = (value) => JSON.stringify(value, null, 2);
       let latestWatchlistSymbols = [];
-      const primaryWatchlistSymbol = () => latestWatchlistSymbols[0] || "ALGM";
+      const primaryWatchlistSymbol = () => latestWatchlistSymbols[0] || "MSFT";
       const money = (value) => (Number.isFinite(Number(value)) ? Number(value).toFixed(2) : "-");
       const pct = (value) => (Number.isFinite(Number(value)) ? `${(Number(value) * 100).toFixed(2)}%` : "-");
       const signedPct = (value) => {
@@ -1268,6 +1268,7 @@
         document.querySelector("#watchlist-metrics").innerHTML = [
           ["Kandidaten", watchlist?.count ?? candidates.length],
           ["Quelle", watchlist?.source || "-"],
+          ["Universum", "MSCI World Large Caps"],
           ["Nur undervalued", "Ja"],
           ["Top Symbol", primaryWatchlistSymbol()],
         ]
@@ -1288,7 +1289,7 @@
                 <td>${money(candidate.fair_value)}</td>
                 <td class="${pnlClass(candidate.margin_of_safety)}">${signedPct(candidate.margin_of_safety)}</td>
                 <td>${candidate.score}</td>
-                <td>${badge("Halal Kandidat", "ok")}<br><span class="muted">Midcap · undervalued</span></td>
+                <td>${badge("Halal Kandidat", "ok")}<br><span class="muted">Large Cap · MSCI World · undervalued</span></td>
               </tr>`,
             )
             .join("") || '<tr><td colspan="8" class="muted">Keine Watchlist-Kandidaten verfügbar.</td></tr>';

@@ -7,7 +7,7 @@ from typing import Any
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from trading_app.watchlist import HALAL_MIDCAP_SYMBOLS
+from trading_app.watchlist import HALAL_MSCI_WORLD_LARGE_CAP_SYMBOLS
 
 
 class Settings(BaseSettings):
@@ -51,7 +51,7 @@ class Settings(BaseSettings):
         validation_alias="DATABASE_PATH",
     )
     default_symbols: tuple[str, ...] = Field(
-        default=HALAL_MIDCAP_SYMBOLS,
+        default=HALAL_MSCI_WORLD_LARGE_CAP_SYMBOLS,
         validation_alias="DEFAULT_SYMBOLS",
     )
 

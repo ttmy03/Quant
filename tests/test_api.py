@@ -303,7 +303,7 @@ def test_monte_carlo_can_simulate_all_watchlist_symbols_together(tmp_path) -> No
 
 
 
-def test_watchlist_endpoint_returns_dynamic_halal_midcap_candidates(tmp_path) -> None:
+def test_watchlist_endpoint_returns_dynamic_halal_msci_world_large_cap_candidates(tmp_path) -> None:
     settings = Settings(
         DATABASE_PATH=tmp_path / "test.sqlite3",
         AUTH_ENABLED=False,
@@ -320,12 +320,15 @@ def test_watchlist_endpoint_returns_dynamic_halal_midcap_candidates(tmp_path) ->
     payload = response.json()
     assert payload["count"] == 20
     assert len(payload["symbols"]) == 20
-    assert payload["methodology"]["universe"] == "20 qualitatively screened halal midcap candidates"
+    assert payload["methodology"]["universe"] == "20 qualitatively screened halal MSCI World large-cap candidates"
+    assert payload["methodology"]["index_reference"] == "MSCI World developed-market large caps"
     assert payload["candidates"][0]["rank"] == 1
     assert all(candidate["halal_screen"] == "candidate_only_qualitative_pass" for candidate in payload["candidates"])
-    assert all(candidate["market_cap_category"] == "midcap" for candidate in payload["candidates"])
+    assert all(candidate["market_cap_category"] == "largecap" for candidate in payload["candidates"])
     assert all(candidate["undervalued"] is True for candidate in payload["candidates"])
     assert all(candidate["margin_of_safety"] > 0 for candidate in payload["candidates"])
+    assert {"Technology", "Healthcare", "Industrials", "Materials", "Consumer"}.issubset({candidate["sector"] for candidate in payload["candidates"]})
+    assert {"MSFT", "NVDA", "ASML", "LLY", "NVO", "LIN", "CAT", "TM"}.issubset(set(payload["symbols"]))
     assert payload["symbols"] == [candidate["symbol"] for candidate in payload["candidates"]]
 
 def test_dashboard_includes_visual_chart_canvases(tmp_path) -> None:
@@ -354,7 +357,8 @@ def test_dashboard_includes_visual_chart_canvases(tmp_path) -> None:
     assert 'id="watchlist-card"' in response.text
     assert 'id="watchlist-table"' in response.text
     assert 'id="refresh-watchlist"' in response.text
-    assert "Dynamische Halal Midcap Watchlist" in response.text
+    assert "Dynamische Halal Large-Cap Watchlist" in response.text
+    assert "MSCI World" in response.text
     assert 'api("/api/watchlist")' in response.text
     assert "renderWatchlist" in response.text
     assert "primaryWatchlistSymbol" in response.text

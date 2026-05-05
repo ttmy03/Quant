@@ -124,7 +124,7 @@ class StrategyParamsModel(BaseModel):
 
 
 class MonteCarloRequest(BaseModel):
-    symbol: str = "ALGM"
+    symbol: str = "MSFT"
     symbols: list[str] | None = None
     returns: list[float] | None = None
     initial_value: float = Field(default=10_000.0, gt=0)
@@ -189,7 +189,7 @@ class MonteCarloSummary(BaseModel):
 
 
 class BacktestRequest(BaseModel):
-    symbol: str = "ALGM"
+    symbol: str = "MSFT"
     symbols: list[str] | None = None
     days: int = Field(default=252, ge=1, le=5000)
     seed: int = 42

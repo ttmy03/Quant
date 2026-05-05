@@ -10,6 +10,8 @@ def test_settings_default_to_paper_dry_run_mode() -> None:
     assert settings.alpaca_configured is False
     assert settings.auth_enabled is True
     assert settings.session_cookie_name == "paper_quant_session"
+    assert settings.default_symbols[:5] == ("MSFT", "NVDA", "AAPL", "ASML", "AVGO")
+    assert len(settings.default_symbols) == 20
 
 
 def test_settings_parse_symbols_from_env_string() -> None:

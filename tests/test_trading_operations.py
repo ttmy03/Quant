@@ -255,9 +255,11 @@ def test_scheduler_uses_dynamic_halal_watchlist_when_symbols_are_omitted(tmp_pat
     assert response.status_code == 200
     payload = response.json()
     assert payload["watchlist"]["count"] == 20
+    assert payload["watchlist"]["methodology"]["index_reference"] == "MSCI World developed-market large caps"
     assert len(payload["run"]["symbols"]) == 20
     assert payload["run"]["symbols"] == payload["watchlist"]["symbols"]
-    assert "AAPL" not in payload["run"]["symbols"]
+    assert {"MSFT", "NVDA", "ASML", "LLY", "NVO", "CAT", "TM"}.issubset(set(payload["run"]["symbols"]))
+    assert "ALGM" not in payload["run"]["symbols"]
     assert payload["no_live_orders_sent"] is True
 
 
