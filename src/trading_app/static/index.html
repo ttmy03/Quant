@@ -723,6 +723,9 @@
           </div>
         </div>
         <div class="input-strip">
+          <label for="backtest-days">Backtest Zeitraum</label>
+          <input id="backtest-days" type="number" min="20" max="5000" step="1" value="252" aria-label="Backtest Zeitraum in Handelstagen" />
+          <span class="helper-text">Tage/Kerzen für den Backtest. Beispiel: 60 kurz, 252 ca. ein Börsenjahr.</span>
           <label for="backtest-data-source">Backtest Datenquelle</label>
           <select id="backtest-data-source" aria-label="Backtest Datenquelle">
             <option value="auto">Auto: Alpaca, sonst Fallback</option>
@@ -1251,11 +1254,17 @@
         const inputs = backtest.inputs || {};
         const trades = backtest.trades || [];
         const curve = backtest.equity_curve || [];
+        const firstPoint = curve[0] || {};
         const lastPoint = curve[curve.length - 1] || {};
+        const initialValue = backtest.initial_cash ?? inputs.initial_cash ?? firstPoint.equity;
+        const endValue = metrics.final_equity ?? lastPoint.equity;
         document.querySelector("#backtest-metrics").innerHTML = [
-          ["Final Equity", money(metrics.final_equity)],
-          ["Return", pct(metrics.total_return)],
+          ["Anfangswert", money(initialValue)],
+          ["Endwert", money(endValue)],
+          ["Gewinn/Verlust", money((endValue ?? 0) - (initialValue ?? 0))],
+          ["Rendite", pct(metrics.total_return)],
           ["Max Drawdown", pct(metrics.max_drawdown)],
+          ["Zeitraum", `${inputs.days ?? curve.length} Tage`],
           ["Datenquelle", inputs.resolved_data_source || inputs.data_source || "-"],
           ["Bars", inputs.bars_count ?? curve.length],
           ["Trades", metrics.trades_count ?? 0],
@@ -1285,13 +1294,15 @@
         );
         renderStatusList("#backtest-equity", [
           ["Symbol", backtest.symbol],
+          ["Anfangswert", money(initialValue)],
+          ["Endwert", money(endValue)],
+          ["Zeitraum", `${inputs.days ?? curve.length} Tage`],
           ["Buy & Hold", pct(metrics.buy_and_hold_return)],
           ["Exposure", pct(metrics.exposure_pct)],
           ["Angefragt", safe(inputs.data_source)],
           ["Genutzt", safe(inputs.resolved_data_source)],
           ["Fallback", inputs.fallback_reason || "-"],
           ["Bars", inputs.bars_count ?? curve.length],
-          ["Letzte Equity", money(lastPoint.equity)],
         ]);
       }
 
@@ -1493,9 +1504,12 @@
         withButtonLoading(event.currentTarget, "Backtest", async () => {
           renderStatusList("#backtest-equity", [["Status", "Backtest läuft gerade..."]]);
           const dataSource = document.querySelector("#backtest-data-source").value;
+          const daysInput = document.querySelector("#backtest-days");
+          const days = Math.min(5000, Math.max(20, Number(daysInput.value || 252)));
+          daysInput.value = days;
           const result = await api("/api/backtests/run", {
             method: "POST",
-            body: json({ symbol: "AAPL", days: 252, seed: 42, initial_cash: 10000, trade_notional: 1000, data_source: dataSource }),
+            body: json({ symbol: "AAPL", days, seed: 42, initial_cash: 10000, trade_notional: 1000, data_source: dataSource }),
           });
           renderBacktest(result.backtest);
           await refresh();
