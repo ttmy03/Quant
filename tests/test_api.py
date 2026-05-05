@@ -248,6 +248,14 @@ def test_dashboard_includes_visual_chart_canvases(tmp_path) -> None:
     assert "Portfolio Überblick" in response.text
     assert "Dry-Run Aktionen" in response.text
     assert "Not-Aus aktivieren" in response.text
+    assert 'id="process-status"' in response.text
+    assert 'data-help="Aktiviert den Kill-Switch' in response.text
+    assert 'data-help="Startet eine Monte-Carlo-Simulation' in response.text
+    assert 'data-help="Sendet eine manuelle Testorder' in response.text
+    assert "button-help-dot" in response.text
+    assert "withButtonLoading" in response.text
+    assert "is-loading" in response.text
+    assert "läuft gerade" in response.text
     assert "<pre" not in response.text
     assert "renderStatusList" in response.text
     assert "renderDetailGrid" in response.text

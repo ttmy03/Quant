@@ -81,6 +81,37 @@
         color: #fff;
         cursor: pointer;
         padding: 0 12px;
+        transition: opacity 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+      }
+      button:hover:not(:disabled) {
+        box-shadow: 0 8px 20px rgba(15, 118, 110, 0.18);
+        transform: translateY(-1px);
+      }
+      button:disabled {
+        cursor: wait;
+        opacity: 0.7;
+      }
+      button.is-loading {
+        position: relative;
+      }
+      button.is-loading::before {
+        animation: spin 0.8s linear infinite;
+        border: 2px solid rgba(255, 255, 255, 0.45);
+        border-top-color: #ffffff;
+        border-radius: 999px;
+        content: "";
+        display: inline-block;
+        height: 12px;
+        margin-right: 8px;
+        vertical-align: -2px;
+        width: 12px;
+      }
+      button.secondary.is-loading::before {
+        border-color: rgba(15, 118, 110, 0.25);
+        border-top-color: var(--accent);
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
       }
       button.secondary {
         background: #fff;
@@ -336,6 +367,93 @@
         line-height: 1.35;
         margin: 0;
       }
+      .process-status {
+        align-items: center;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        display: inline-flex;
+        font-size: 13px;
+        font-weight: 700;
+        gap: 8px;
+        margin-top: 4px;
+        padding: 8px 12px;
+      }
+      .process-status::before {
+        border-radius: 999px;
+        content: "";
+        height: 8px;
+        width: 8px;
+      }
+      .process-status.idle {
+        background: #f8fafc;
+        color: var(--muted);
+      }
+      .process-status.idle::before {
+        background: var(--muted);
+      }
+      .process-status.running {
+        background: #ecfeff;
+        color: #0e7490;
+      }
+      .process-status.running::before {
+        animation: pulse 1s ease-in-out infinite;
+        background: #06b6d4;
+      }
+      .process-status.success {
+        background: #dcfce7;
+        color: #166534;
+      }
+      .process-status.success::before {
+        background: #22c55e;
+      }
+      .process-status.error {
+        background: #fee2e2;
+        color: #991b1b;
+      }
+      .process-status.error::before {
+        background: var(--danger);
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 0.35; transform: scale(0.9); }
+        50% { opacity: 1; transform: scale(1.25); }
+      }
+      .button-help {
+        align-items: center;
+        display: inline-grid;
+        gap: 6px;
+        grid-template-columns: auto 22px;
+      }
+      .button-help-dot {
+        align-items: center;
+        background: #eef2f7;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        cursor: help;
+        display: inline-flex;
+        font-size: 12px;
+        font-weight: 800;
+        height: 22px;
+        justify-content: center;
+        position: relative;
+        width: 22px;
+      }
+      .button-help-dot:hover::after,
+      .button-help-dot:focus::after {
+        background: #111827;
+        border-radius: 8px;
+        bottom: calc(100% + 8px);
+        color: #ffffff;
+        content: attr(data-help);
+        font-size: 12px;
+        font-weight: 500;
+        line-height: 1.35;
+        padding: 8px 10px;
+        position: absolute;
+        right: 0;
+        width: min(280px, 80vw);
+        z-index: 10;
+      }
       .group-grid {
         grid-template-columns: repeat(12, 1fr);
       }
@@ -420,7 +538,7 @@
       <div class="session-bar">
         <span class="pill" id="auth-state">Session wird geprueft...</span>
         <form class="logout" method="post" action="/logout">
-          <button class="secondary" type="submit">Logout</button>
+          <button class="secondary" type="submit" data-help="Beendet deine Dashboard-Sitzung und bringt dich zurück zum Login.">Logout</button>
         </form>
       </div>
     </header>
@@ -431,6 +549,7 @@
           <p class="eyebrow">Einfacher Ablauf</p>
           <h2>Was soll ich tun?</h2>
           <p class="section-copy">Das Dashboard ist jetzt in Schritte aufgeteilt: erst Sicherheit prüfen, dann Konto ansehen, danach Simulationen oder Dry-Run Aktionen starten.</p>
+          <div id="process-status" class="process-status idle" aria-live="polite">Bereit. Kein Prozess läuft.</div>
         </div>
         <div class="guide-grid">
           <div class="guide-card"><span>1</span><strong>Sicherheit prüfen</strong><p>Dry Run, Paper Only und Kill-Switch zeigen, ob Aktionen sicher blockiert sind.</p></div>
@@ -447,7 +566,7 @@
             <h2>Sicherheit & Freigabe</h2>
             <p class="section-copy">Hier sieht man sofort, ob Trading erlaubt, pausiert oder per Not-Aus blockiert ist. Für diese App bleiben echte Orders deaktiviert.</p>
           </div>
-          <button id="refresh">Alles aktualisieren</button>
+          <button id="refresh" data-help="Lädt alle Dashboard-Daten neu: Sicherheit, Portfolio, Analysen, Alerts und Verlauf.">Alles aktualisieren</button>
         </div>
         <div class="group-grid">
           <section class="span-4 emphasis-card">
@@ -460,10 +579,10 @@
             <h3>Trading Control</h3>
             <p class="helper-text">Pause ist temporär. Kill-Switch ist der harte Not-Aus und blockiert Scheduler sowie Orders.</p>
             <div class="action-grid compact-actions">
-              <button class="danger-button" id="enable-kill-switch">Not-Aus aktivieren</button>
-              <button class="secondary" id="disable-kill-switch">Not-Aus freigeben</button>
-              <button class="secondary" id="pause-trading">Trading pausieren</button>
-              <button class="secondary" id="resume-trading">Trading fortsetzen</button>
+              <button class="danger-button" id="enable-kill-switch" data-help="Aktiviert den Kill-Switch. Scheduler und Orders werden blockiert, bis du ihn wieder freigibst.">Not-Aus aktivieren</button>
+              <button class="secondary" id="disable-kill-switch" data-help="Deaktiviert den Kill-Switch. Trading bleibt trotzdem durch Dry-Run und Paper-Only geschützt.">Not-Aus freigeben</button>
+              <button class="secondary" id="pause-trading" data-help="Pausiert Trading-Aktionen temporär, ohne den harten Not-Aus zu aktivieren.">Trading pausieren</button>
+              <button class="secondary" id="resume-trading" data-help="Hebt die Pause wieder auf. Echte Orders bleiben weiterhin durch den Sicherheitsmodus deaktiviert.">Trading fortsetzen</button>
             </div>
             <div class="detail-grid" id="trading-control">Laedt...</div>
           </section>
@@ -505,9 +624,9 @@
             <p class="section-copy">Diese Aktionen sind Research-Funktionen. Sie helfen bei Entscheidungen, senden aber keine echten Orders.</p>
           </div>
           <div class="action-grid top-actions">
-            <button class="secondary" id="run-sim">Monte Carlo starten</button>
-            <button class="secondary" id="run-backtest">Backtest starten</button>
-            <button class="secondary" id="run-improve">Strategie verbessern</button>
+            <button class="secondary" id="run-sim" data-help="Startet eine Monte-Carlo-Simulation, um mögliche Portfolio-Pfade und Risiken sichtbar zu machen.">Monte Carlo starten</button>
+            <button class="secondary" id="run-backtest" data-help="Testet die Strategie auf Kursdaten und zeigt Rendite, Drawdown, Trades und Equity Curve.">Backtest starten</button>
+            <button class="secondary" id="run-improve" data-help="Probiert Strategieparameter aus und zeigt, ob eine bessere Konfiguration gefunden wurde.">Strategie verbessern</button>
           </div>
         </div>
         <div class="input-strip">
@@ -567,7 +686,7 @@
             <h2>Dry-Run Aktionen</h2>
             <p class="section-copy">Hier kannst du einen Strategiezyklus oder eine Testorder auslösen. Beides bleibt im Dry-Run/Paper-Sicherheitsrahmen.</p>
           </div>
-          <button id="run-scheduler-once">Scheduler einmal starten</button>
+          <button id="run-scheduler-once" data-help="Startet genau einen Dry-Run Strategiezyklus: Signale berechnen, Risiko prüfen, mögliche Testorders protokollieren.">Scheduler einmal starten</button>
         </div>
         <div class="group-grid">
           <section class="span-6">
@@ -590,7 +709,7 @@
                 <option value="market">Market</option>
                 <option value="limit">Limit</option>
               </select>
-              <button type="submit">Testorder senden</button>
+              <button type="submit" data-help="Sendet eine manuelle Testorder durch den Risk-Flow. Sie bleibt eine Dry-Run Order und geht nicht live an die Börse.">Testorder senden</button>
             </form>
             <div id="order-result" class="status-box muted">Noch keine Order.</div>
           </section>
@@ -604,7 +723,7 @@
             <h2>Verlauf & Hinweise</h2>
             <p class="section-copy">Alles, was passiert ist: Strategieparameter, Alerts, Tagesreport, Audit Events und Order-Historie.</p>
           </div>
-          <button class="secondary" id="load-daily-report">Tagesreport aktualisieren</button>
+          <button class="secondary" id="load-daily-report" data-help="Lädt die Tageszusammenfassung mit Orders, Backtests, Simulationen, Alerts und Safety-Status neu.">Tagesreport aktualisieren</button>
         </div>
         <div class="group-grid">
           <section class="span-4">
@@ -1055,99 +1174,177 @@
         renderDailyReport(report);
       }
 
-      document.querySelector("#refresh").addEventListener("click", refresh);
-      document.querySelector("#enable-kill-switch").addEventListener("click", async () => {
-        await api("/api/trading-control/kill-switch", {
-          method: "POST",
-          body: json({ enabled: true, reason: "dashboard" }),
+      function setProcessStatus(message, state = "idle") {
+        const element = document.querySelector("#process-status");
+        if (!element) return;
+        element.className = `process-status ${state}`;
+        element.textContent = message;
+      }
+
+      function enhanceButtonHelp() {
+        document.querySelectorAll("button[data-help]").forEach((button) => {
+          if (button.parentElement?.classList.contains("button-help")) return;
+          const wrapper = document.createElement("span");
+          wrapper.className = "button-help";
+          const dot = document.createElement("span");
+          dot.className = "button-help-dot";
+          dot.tabIndex = 0;
+          dot.textContent = "i";
+          dot.setAttribute("role", "note");
+          dot.setAttribute("aria-label", button.dataset.help);
+          dot.dataset.help = button.dataset.help;
+          button.parentNode.insertBefore(wrapper, button);
+          wrapper.appendChild(button);
+          wrapper.appendChild(dot);
         });
-        await refresh();
-      });
-      document.querySelector("#disable-kill-switch").addEventListener("click", async () => {
-        await api("/api/trading-control/kill-switch", {
-          method: "POST",
-          body: json({ enabled: false, reason: "dashboard" }),
-        });
-        await refresh();
-      });
-      document.querySelector("#pause-trading").addEventListener("click", async () => {
-        await api("/api/trading-control/pause", {
-          method: "POST",
-          body: json({ reason: "dashboard" }),
-        });
-        await refresh();
-      });
-      document.querySelector("#resume-trading").addEventListener("click", async () => {
-        await api("/api/trading-control/resume", {
-          method: "POST",
-          body: json({ reason: "dashboard" }),
-        });
-        await refresh();
-      });
-      document.querySelector("#run-scheduler-once").addEventListener("click", async () => {
-        const result = await api("/api/scheduler/run-once", {
-          method: "POST",
-          body: json({}),
-        });
-        renderNotice("#scheduler-result", "Scheduler-Lauf", [
-          ["Status", result.run?.status || "-"],
-          ["Signale", result.signals?.length ?? 0],
-          ["Orders", result.orders?.length ?? 0],
-          ["Live Orders", result.no_live_orders_sent ? "Keine" : "Achtung"],
-        ], result.run?.status === "completed" ? "ok" : "warn");
-        await refresh();
-      });
-      document.querySelector("#load-daily-report").addEventListener("click", async () => {
-        renderDailyReport(await api("/api/reports/daily"));
-      });
-      document.querySelector("#run-sim").addEventListener("click", async () => {
-        const result = await api("/api/simulations/monte-carlo", {
-          method: "POST",
-          body: json({ seed: 42, paths: 1000, horizon_days: 252 }),
-        });
-        renderMonteCarlo(result.summary);
-        await refresh();
-      });
-      document.querySelector("#run-improve").addEventListener("click", async () => {
-        const result = await api("/api/improvement/run", {
-          method: "POST",
-          body: json({ symbol: "AAPL", days: 180, seed: 42 }),
-        });
-        renderStatusList("#strategy", [
-          ["Promoted", yesNo(result.promoted)],
-          ["Beste Rendite", pct(result.best_candidate?.metrics?.total_return)],
-          ["Kandidaten", result.candidates?.length ?? 0],
-          ["Ausgewählte Parameter", result.selected_params ? `S${result.selected_params.short_window} / L${result.selected_params.long_window}` : "-"],
-        ]);
-        await refresh();
-      });
-      document.querySelector("#run-backtest").addEventListener("click", async () => {
-        const dataSource = document.querySelector("#backtest-data-source").value;
-        const result = await api("/api/backtests/run", {
-          method: "POST",
-          body: json({ symbol: "AAPL", days: 252, seed: 42, initial_cash: 10000, trade_notional: 1000, data_source: dataSource }),
-        });
-        renderBacktest(result.backtest);
-        await refresh();
-      });
-      document.querySelector("#order-form").addEventListener("submit", async (event) => {
+      }
+
+      async function withButtonLoading(button, label, action) {
+        const originalText = button.textContent;
+        const buttons = [...document.querySelectorAll("button")];
+        try {
+          buttons.forEach((item) => (item.disabled = true));
+          button.classList.add("is-loading");
+          button.textContent = `${label} läuft...`;
+          setProcessStatus(`${label} läuft gerade...`, "running");
+          const result = await action();
+          setProcessStatus(`${label} abgeschlossen.`, "success");
+          return result;
+        } catch (error) {
+          setProcessStatus(`${label} fehlgeschlagen: ${error.message}`, "error");
+          throw error;
+        } finally {
+          button.classList.remove("is-loading");
+          button.textContent = originalText;
+          buttons.forEach((item) => (item.disabled = false));
+        }
+      }
+
+      document.querySelector("#refresh").addEventListener("click", (event) =>
+        withButtonLoading(event.currentTarget, "Aktualisierung", refresh),
+      );
+      document.querySelector("#enable-kill-switch").addEventListener("click", (event) =>
+        withButtonLoading(event.currentTarget, "Not-Aus Aktivierung", async () => {
+          await api("/api/trading-control/kill-switch", {
+            method: "POST",
+            body: json({ enabled: true, reason: "dashboard" }),
+          });
+          await refresh();
+        }),
+      );
+      document.querySelector("#disable-kill-switch").addEventListener("click", (event) =>
+        withButtonLoading(event.currentTarget, "Not-Aus Freigabe", async () => {
+          await api("/api/trading-control/kill-switch", {
+            method: "POST",
+            body: json({ enabled: false, reason: "dashboard" }),
+          });
+          await refresh();
+        }),
+      );
+      document.querySelector("#pause-trading").addEventListener("click", (event) =>
+        withButtonLoading(event.currentTarget, "Trading-Pause", async () => {
+          await api("/api/trading-control/pause", {
+            method: "POST",
+            body: json({ reason: "dashboard" }),
+          });
+          await refresh();
+        }),
+      );
+      document.querySelector("#resume-trading").addEventListener("click", (event) =>
+        withButtonLoading(event.currentTarget, "Trading-Fortsetzung", async () => {
+          await api("/api/trading-control/resume", {
+            method: "POST",
+            body: json({ reason: "dashboard" }),
+          });
+          await refresh();
+        }),
+      );
+      document.querySelector("#run-scheduler-once").addEventListener("click", (event) =>
+        withButtonLoading(event.currentTarget, "Scheduler", async () => {
+          renderNotice("#scheduler-result", "Scheduler-Lauf", [["Status", "läuft gerade..."]], "warn");
+          const result = await api("/api/scheduler/run-once", {
+            method: "POST",
+            body: json({}),
+          });
+          renderNotice("#scheduler-result", "Scheduler-Lauf", [
+            ["Status", result.run?.status || "-"],
+            ["Signale", result.signals?.length ?? 0],
+            ["Orders", result.orders?.length ?? 0],
+            ["Live Orders", result.no_live_orders_sent ? "Keine" : "Achtung"],
+          ], result.run?.status === "completed" ? "ok" : "warn");
+          await refresh();
+        }),
+      );
+      document.querySelector("#load-daily-report").addEventListener("click", (event) =>
+        withButtonLoading(event.currentTarget, "Tagesreport", async () => {
+          renderDailyReport(await api("/api/reports/daily"));
+        }),
+      );
+      document.querySelector("#run-sim").addEventListener("click", (event) =>
+        withButtonLoading(event.currentTarget, "Monte Carlo", async () => {
+          renderStatusList("#simulation", [["Status", "Simulation läuft gerade..."]]);
+          const result = await api("/api/simulations/monte-carlo", {
+            method: "POST",
+            body: json({ seed: 42, paths: 1000, horizon_days: 252 }),
+          });
+          renderMonteCarlo(result.summary);
+          await refresh();
+        }),
+      );
+      document.querySelector("#run-improve").addEventListener("click", (event) =>
+        withButtonLoading(event.currentTarget, "Strategie-Verbesserung", async () => {
+          renderStatusList("#strategy", [["Status", "Optimierung läuft gerade..."]]);
+          const result = await api("/api/improvement/run", {
+            method: "POST",
+            body: json({ symbol: "AAPL", days: 180, seed: 42 }),
+          });
+          renderStatusList("#strategy", [
+            ["Promoted", yesNo(result.promoted)],
+            ["Beste Rendite", pct(result.best_candidate?.metrics?.total_return)],
+            ["Kandidaten", result.candidates?.length ?? 0],
+            ["Ausgewählte Parameter", result.selected_params ? `S${result.selected_params.short_window} / L${result.selected_params.long_window}` : "-"],
+          ]);
+          await refresh();
+        }),
+      );
+      document.querySelector("#run-backtest").addEventListener("click", (event) =>
+        withButtonLoading(event.currentTarget, "Backtest", async () => {
+          renderStatusList("#backtest-equity", [["Status", "Backtest läuft gerade..."]]);
+          const dataSource = document.querySelector("#backtest-data-source").value;
+          const result = await api("/api/backtests/run", {
+            method: "POST",
+            body: json({ symbol: "AAPL", days: 252, seed: 42, initial_cash: 10000, trade_notional: 1000, data_source: dataSource }),
+          });
+          renderBacktest(result.backtest);
+          await refresh();
+        }),
+      );
+      document.querySelector("#order-form").addEventListener("submit", (event) => {
         event.preventDefault();
-        const form = new FormData(event.target);
-        const body = Object.fromEntries(form.entries());
-        body.qty = Number(body.qty);
-        const result = await api("/api/orders", { method: "POST", body: json(body) });
-        renderNotice("#order-result", "Order", [
-          ["Status", result.submission?.status || "-"],
-          ["Dry Run", yesNo(result.submission?.dry_run)],
-          ["Risk", result.risk?.allowed ? "erlaubt" : "blockiert"],
-          ["Nachricht", result.submission?.message || "-"],
-        ], result.submission?.accepted ? "ok" : "warn");
-        await refresh();
+        const submitButton = event.submitter || document.querySelector("#order-form button[type='submit']");
+        return withButtonLoading(submitButton, "Testorder", async () => {
+          renderNotice("#order-result", "Order", [["Status", "wird geprüft..."]], "warn");
+          const form = new FormData(event.target);
+          const body = Object.fromEntries(form.entries());
+          body.qty = Number(body.qty);
+          const result = await api("/api/orders", { method: "POST", body: json(body) });
+          renderNotice("#order-result", "Order", [
+            ["Status", result.submission?.status || "-"],
+            ["Dry Run", yesNo(result.submission?.dry_run)],
+            ["Risk", result.risk?.allowed ? "erlaubt" : "blockiert"],
+            ["Nachricht", result.submission?.message || "-"],
+          ], result.submission?.accepted ? "ok" : "warn");
+          await refresh();
+        });
       });
 
-      refresh().catch((error) => {
-        document.querySelector("#config").innerHTML = `<div class="empty-state danger">${error.message}</div>`;
-      });
+      enhanceButtonHelp();
+      refresh()
+        .then(() => setProcessStatus("Bereit. Kein Prozess läuft.", "idle"))
+        .catch((error) => {
+          setProcessStatus(`Laden fehlgeschlagen: ${error.message}`, "error");
+          document.querySelector("#config").innerHTML = `<div class="empty-state danger">${error.message}</div>`;
+        });
     </script>
   </body>
 </html>
