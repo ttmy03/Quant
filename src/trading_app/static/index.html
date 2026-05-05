@@ -338,6 +338,13 @@
       .trade-card .value {
         font-size: 11px;
       }
+      .close-position-button {
+        background: var(--danger);
+        font-size: 12px;
+        min-height: 30px;
+        padding: 0 8px;
+        white-space: nowrap;
+      }
       .chart-grid {
         display: grid;
         gap: 12px;
@@ -686,6 +693,7 @@
                   <th>Marktwert</th>
                   <th>U/PnL</th>
                   <th>U/PnL %</th>
+                  <th>Aktion</th>
                 </tr>
               </thead>
               <tbody id="positions-table"></tbody>
@@ -1113,9 +1121,11 @@
                 <td>${money(position.market_value)}</td>
                 <td class="${pnlClass(position.unrealized_pl)}">${money(position.unrealized_pl)}</td>
                 <td class="${pnlClass(position.unrealized_plpc)}">${signedPct(position.unrealized_plpc)}</td>
+                <td><button class="close-position-button" data-close-position="${position.symbol}" data-help="Schließt diese einzelne Position manuell über eine Gegenorder. Im aktuellen Sicherheitsmodus bleibt es Dry-Run/Paper-Only.">Schließen</button></td>
               </tr>`,
             )
-            .join("") || '<tr><td colspan="5" class="muted">Keine Positionen.</td></tr>';
+            .join("") || '<tr><td colspan="6" class="muted">Keine Positionen.</td></tr>';
+        enhanceButtonHelp();
       }
 
       function renderActiveTrades(active) {
@@ -1506,6 +1516,26 @@
             ["Risk", result.risk?.allowed ? "erlaubt" : "blockiert"],
             ["Nachricht", result.submission?.message || "-"],
           ], result.submission?.accepted ? "ok" : "warn");
+          await refresh();
+        });
+      });
+
+      document.querySelector("#positions-table").addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-close-position]");
+        if (!button) return;
+        const symbol = button.dataset.closePosition;
+        return withButtonLoading(button, `Position ${symbol} schließen`, async () => {
+          const result = await api(`/api/positions/${encodeURIComponent(symbol)}/close`, {
+            method: "POST",
+            body: json({ reason: "dashboard manual close" }),
+          });
+          renderNotice("#order-result", `Position ${symbol} schließen`, [
+            ["Status", result.submission?.status || "-"],
+            ["Dry Run", yesNo(result.submission?.dry_run)],
+            ["Risk", result.risk?.allowed ? "erlaubt" : "blockiert"],
+            ["Nachricht", result.submission?.message || "-"],
+          ], result.submission?.accepted ? "ok" : "warn");
+          await refreshLivePortfolio();
           await refresh();
         });
       });

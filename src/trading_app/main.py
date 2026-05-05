@@ -23,6 +23,7 @@ from trading_app.monte_carlo import simulate_portfolio_paths
 from trading_app.risk import RiskGuard
 from trading_app.schemas import (
     BacktestRequest,
+    ClosePositionRequest,
     ControlReasonRequest,
     ImprovementRequest,
     KillSwitchRequest,
@@ -407,6 +408,106 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
             actor="codex",
         )
         return {
+            "order": order,
+            "risk": risk_decision.model_dump(),
+            "submission": submission.model_dump(),
+        }
+
+
+    @app.post("/api/positions/{symbol}/close")
+    def close_position(symbol: str, request: ClosePositionRequest) -> dict[str, object]:
+        symbol = symbol.upper()
+        control = storage.get_trading_control_state()
+        if not control["can_trade"]:
+            submission = OrderSubmission(
+                accepted=False,
+                status="blocked_by_control",
+                dry_run=True,
+                message="Trading control state blocks manual position close.",
+                raw_response={"control": control},
+            )
+            storage.record_audit(
+                "position_close_blocked_by_control",
+                submission.message,
+                {"symbol": symbol, "reason": request.reason, "submission": submission.model_dump(), "control": control},
+                actor="operator",
+            )
+            return {
+                "position": None,
+                "order": None,
+                "risk": {"allowed": False, "reasons": ["trading control state blocks orders"], "estimated_notional": 0.0},
+                "submission": submission.model_dump(),
+            }
+
+        client = AlpacaClient(settings)
+        positions_payload = client.positions()
+        position = next(
+            (row for row in positions_payload.get("positions", []) if str(row.get("symbol", "")).upper() == symbol),
+            None,
+        )
+        if position is None or float(position.get("qty") or 0.0) == 0.0:
+            submission = OrderSubmission(
+                accepted=False,
+                status="no_position",
+                dry_run=True,
+                message=f"No open position found for {symbol}.",
+                raw_response={"positions_source": positions_payload.get("source")},
+            )
+            storage.record_audit(
+                "position_close_no_position",
+                submission.message,
+                {"symbol": symbol, "reason": request.reason, "submission": submission.model_dump()},
+                actor="operator",
+            )
+            return {
+                "position": None,
+                "order": None,
+                "risk": {"allowed": False, "reasons": ["no open position found"], "estimated_notional": 0.0},
+                "submission": submission.model_dump(),
+            }
+
+        qty = abs(float(position.get("qty") or 0.0))
+        side = "buy" if str(position.get("side", "")).lower() == "short" else "sell"
+        intent = OrderIntent(symbol=symbol, side=side, qty=qty, order_type="market")
+        estimated_price = float(position.get("current_price") or 0.0)
+        if estimated_price <= 0:
+            bars = client.latest_bars([symbol])
+            estimated_price = bars[0].close if bars else 0.0
+        orders_today = len(storage.list_orders(limit=settings.max_daily_orders))
+        risk_decision = RiskGuard(settings).evaluate_order(
+            intent,
+            estimated_price=estimated_price,
+            orders_today=orders_today,
+        )
+        submission = client.place_order(intent, risk_decision)
+        order = storage.record_order(
+            intent,
+            status=submission.status,
+            dry_run=submission.dry_run,
+            alpaca_order_id=submission.order_id,
+            raw_response={
+                **submission.raw_response,
+                "close_position": True,
+                "position": position,
+                "reason": request.reason,
+            },
+            source="manual_position_close",
+        )
+        storage.record_audit(
+            "position_close_submitted" if submission.accepted else "position_close_rejected",
+            submission.message,
+            {
+                "symbol": symbol,
+                "reason": request.reason,
+                "position": position,
+                "intent": intent.model_dump(),
+                "risk": risk_decision.model_dump(),
+                "submission": submission.model_dump(),
+            },
+            actor="operator",
+        )
+        return {
+            "position": position,
             "order": order,
             "risk": risk_decision.model_dump(),
             "submission": submission.model_dump(),

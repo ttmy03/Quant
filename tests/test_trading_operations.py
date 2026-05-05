@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 from trading_app.config import Settings
 from trading_app.main import create_app
+from trading_app.schemas import OrderSubmission
 from trading_app.storage import Storage
 from tests.asgi_client import ASGITestClient
 
@@ -235,3 +236,90 @@ def test_active_trades_endpoint_surfaces_local_dry_run_orders_and_signals(tmp_pa
     assert payload["local_orders"][0]["symbol"] == "AAPL"
     assert payload["local_orders"][0]["status"] == "dry_run_accepted"
     assert payload["source"] == "local_dry_run_plus_alpaca_if_configured"
+
+
+def test_close_position_endpoint_records_dry_run_exit_order(monkeypatch, tmp_path) -> None:
+    settings = Settings(
+        DATABASE_PATH=tmp_path / "test.sqlite3",
+        AUTH_ENABLED=False,
+        DEFAULT_SYMBOLS="AAPL",
+        ALPACA_API_KEY="test-key",
+        ALPACA_SECRET_KEY="test-secret",
+        DRY_RUN=True,
+        PAPER_TRADING_ONLY=True,
+        _env_file=None,
+    )
+
+    class FakeAlpacaClient:
+        def __init__(self, settings):
+            self.settings = settings
+
+        def positions(self):
+            return {
+                "configured": True,
+                "source": "alpaca",
+                "positions": [
+                    {
+                        "symbol": "AAPL",
+                        "qty": 3.0,
+                        "side": "long",
+                        "market_value": 300.0,
+                        "avg_entry_price": 90.0,
+                        "current_price": 100.0,
+                        "unrealized_pl": 30.0,
+                        "unrealized_plpc": 0.1111,
+                    }
+                ],
+            }
+
+        def latest_bars(self, symbols):
+            return []
+
+        def place_order(self, intent, risk_decision):
+            return OrderSubmission(
+                accepted=True,
+                status="dry_run_accepted",
+                dry_run=True,
+                message="DRY_RUN is enabled; no order was sent to Alpaca.",
+                order_id="dry-run-close-test",
+                raw_response={"intent": intent.model_dump()},
+            )
+
+    monkeypatch.setattr("trading_app.main.AlpacaClient", FakeAlpacaClient)
+    app = create_app(settings=settings, storage=Storage(settings.database_path))
+
+    with ASGITestClient(app) as client:
+        response = client.post("/api/positions/AAPL/close", json={"reason": "operator close"})
+        orders_response = client.get("/api/orders")
+        audit_response = client.get("/api/audit-events")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["submission"]["status"] == "dry_run_accepted"
+    assert payload["submission"]["dry_run"] is True
+    assert payload["order"]["side"] == "sell"
+    assert payload["order"]["qty"] == 3.0
+    assert payload["position"]["symbol"] == "AAPL"
+    assert orders_response.json()[0]["source"] == "manual_position_close"
+    assert audit_response.json()[0]["event_type"] == "position_close_submitted"
+
+
+def test_close_position_endpoint_reports_missing_position_without_order(tmp_path) -> None:
+    settings = Settings(
+        DATABASE_PATH=tmp_path / "test.sqlite3",
+        AUTH_ENABLED=False,
+        DEFAULT_SYMBOLS="AAPL",
+        ALPACA_API_KEY="",
+        ALPACA_SECRET_KEY="",
+        _env_file=None,
+    )
+    app = create_app(settings=settings, storage=Storage(settings.database_path))
+
+    with ASGITestClient(app) as client:
+        response = client.post("/api/positions/AAPL/close", json={"reason": "operator close"})
+        orders_response = client.get("/api/orders")
+
+    assert response.status_code == 200
+    assert response.json()["submission"]["status"] == "no_position"
+    assert response.json()["submission"]["dry_run"] is True
+    assert orders_response.json() == []

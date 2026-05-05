@@ -83,6 +83,10 @@ class ControlReasonRequest(BaseModel):
     reason: str = Field(default="", max_length=500)
 
 
+class ClosePositionRequest(BaseModel):
+    reason: str = Field(default="", max_length=500)
+
+
 class SchedulerRunRequest(BaseModel):
     symbols: list[str] | None = None
     seed: int = 1
