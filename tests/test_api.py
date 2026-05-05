@@ -280,6 +280,12 @@ def test_dashboard_includes_visual_chart_canvases(tmp_path) -> None:
     assert 'api("/api/watchlist")' in response.text
     assert "renderWatchlist" in response.text
     assert "primaryWatchlistSymbol" in response.text
+    assert "pickLatestWatchlistBacktest" in response.text
+    assert "pickLatestWatchlistSimulation" in response.text
+    assert "renderBacktest(pickLatestWatchlistBacktest(backtests))" in response.text
+    assert "renderMonteCarlo(pickLatestWatchlistSimulation(simulations)?.metrics)" in response.text
+    assert "renderBacktest(backtests[0])" not in response.text
+    assert "renderMonteCarlo(simulations[0]?.metrics)" not in response.text
     assert 'body: json({ symbol: primaryWatchlistSymbol(), seed: 42, paths: 1000, horizon_days: 252, lookback_days: 252, data_source: "auto" })' in response.text
     assert 'body: json({ symbol: primaryWatchlistSymbol(), days, seed: 42, initial_cash: 10000, trade_notional: 1000, data_source: dataSource })' in response.text
     assert 'id="simulation-metrics"' in response.text

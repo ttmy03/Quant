@@ -1179,7 +1179,7 @@
 
       function renderWatchlist(watchlist) {
         const candidates = watchlist?.candidates || [];
-        latestWatchlistSymbols = watchlist?.symbols || candidates.map((candidate) => candidate.symbol);
+        latestWatchlistSymbols = (watchlist?.symbols || candidates.map((candidate) => candidate.symbol)).map((symbol) => String(symbol).toUpperCase());
         document.querySelector("#watchlist-metrics").innerHTML = [
           ["Kandidaten", watchlist?.count ?? candidates.length],
           ["Quelle", watchlist?.source || "-"],
@@ -1402,6 +1402,14 @@
         ]);
       }
 
+      function pickLatestWatchlistBacktest(backtests) {
+        return (backtests || []).find((record) => latestWatchlistSymbols.includes(String(record?.symbol || record?.inputs?.symbol || "").toUpperCase()));
+      }
+
+      function pickLatestWatchlistSimulation(simulations) {
+        return (simulations || []).find((record) => latestWatchlistSymbols.includes(String(record?.metrics?.symbol || record?.inputs?.symbol || "").toUpperCase()));
+      }
+
       async function refreshLivePortfolio() {
         const [status, activeTrades] = await Promise.all([
           api("/api/portfolio/status"),
@@ -1460,8 +1468,8 @@
         renderOrders(orders);
         renderAudit(audit);
         renderAlerts(alerts);
-        renderBacktest(backtests[0]);
-        renderMonteCarlo(simulations[0]?.metrics);
+        renderBacktest(pickLatestWatchlistBacktest(backtests));
+        renderMonteCarlo(pickLatestWatchlistSimulation(simulations)?.metrics);
         renderDailyReport(report);
       }
 
