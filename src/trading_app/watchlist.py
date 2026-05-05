@@ -130,6 +130,9 @@ def build_dynamic_halal_watchlist(
             "disclaimer": "Research watchlist only; not investment advice and not a formal halal fatwa. MSCI World membership and Shariah financial-ratio compliance should be reviewed with authoritative data before real trading.",
         },
         "count": len(selected),
+        "universe_count": len(HALAL_MSCI_WORLD_LARGE_CAP_SYMBOLS),
+        "universe_symbols": list(HALAL_MSCI_WORLD_LARGE_CAP_SYMBOLS),
+        "eligible_symbols": [row["symbol"] for row in selected],
         "symbols": [row["symbol"] for row in selected],
         "candidates": selected,
     }

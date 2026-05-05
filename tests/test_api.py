@@ -320,6 +320,9 @@ def test_watchlist_endpoint_returns_dynamic_halal_msci_world_large_cap_candidate
     payload = response.json()
     assert payload["count"] == 20
     assert len(payload["symbols"]) == 20
+    assert payload["universe_count"] == 20
+    assert len(payload["universe_symbols"]) == 20
+    assert payload["eligible_symbols"] == payload["symbols"]
     assert payload["methodology"]["universe"] == "20 qualitatively screened halal MSCI World large-cap candidates"
     assert payload["methodology"]["index_reference"] == "MSCI World developed-market large caps"
     assert payload["candidates"][0]["rank"] == 1
@@ -364,12 +367,16 @@ def test_dashboard_includes_visual_chart_canvases(tmp_path) -> None:
     assert "primaryWatchlistSymbol" in response.text
     assert "pickLatestWatchlistBacktest" in response.text
     assert "pickLatestWatchlistSimulation" in response.text
+    assert "latestAnalysisSymbols" in response.text
+    assert "universe_symbols" in response.text
+    assert "Backtest ID" in response.text
+    assert "Berechnet" in response.text
     assert "renderBacktest(pickLatestWatchlistBacktest(backtests))" in response.text
     assert "renderMonteCarlo(pickLatestWatchlistSimulation(simulations)?.metrics)" in response.text
     assert "renderBacktest(backtests[0])" not in response.text
     assert "renderMonteCarlo(simulations[0]?.metrics)" not in response.text
-    assert 'body: json({ symbols: latestWatchlistSymbols.slice(0, 20), seed: 42, paths: 1000, horizon_days: 252, lookback_days: 252, data_source: "auto" })' in response.text
-    assert 'body: json({ symbols: latestWatchlistSymbols.slice(0, 20), days, seed: 42, initial_cash: 10000, trade_notional: 1000, data_source: dataSource })' in response.text
+    assert 'body: json({ symbols: latestAnalysisSymbols().slice(0, 20), seed: 42, paths: 1000, horizon_days: 252, lookback_days: 252, data_source: "auto" })' in response.text
+    assert 'body: json({ symbols: latestAnalysisSymbols().slice(0, 20), days, seed: 42, initial_cash: 10000, trade_notional: 1000, data_source: dataSource })' in response.text
     assert "Gesamtportfolio Equity" in response.text
     assert "Gekauft/verkauft" in response.text
     assert "Watchlist Portfolio" in response.text

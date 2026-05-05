@@ -979,7 +979,9 @@
     <script>
       const json = (value) => JSON.stringify(value, null, 2);
       let latestWatchlistSymbols = [];
-      const primaryWatchlistSymbol = () => latestWatchlistSymbols[0] || "MSFT";
+      let latestUniverseSymbols = [];
+      const primaryWatchlistSymbol = () => latestWatchlistSymbols[0] || latestUniverseSymbols[0] || "MSFT";
+      const latestAnalysisSymbols = () => (latestUniverseSymbols.length ? latestUniverseSymbols : latestWatchlistSymbols);
       const money = (value) => (Number.isFinite(Number(value)) ? Number(value).toFixed(2) : "-");
       const pct = (value) => (Number.isFinite(Number(value)) ? `${(Number(value) * 100).toFixed(2)}%` : "-");
       const signedPct = (value) => {
@@ -1265,11 +1267,13 @@
       function renderWatchlist(watchlist) {
         const candidates = watchlist?.candidates || [];
         latestWatchlistSymbols = (watchlist?.symbols || candidates.map((candidate) => candidate.symbol)).map((symbol) => String(symbol).toUpperCase());
+        latestUniverseSymbols = (watchlist?.universe_symbols || latestWatchlistSymbols).map((symbol) => String(symbol).toUpperCase());
         document.querySelector("#watchlist-metrics").innerHTML = [
-          ["Kandidaten", watchlist?.count ?? candidates.length],
+          ["Dynamische Kandidaten", watchlist?.count ?? candidates.length],
+          ["Backtest-Universum", `${latestAnalysisSymbols().length} Symbole`],
           ["Quelle", watchlist?.source || "-"],
           ["Universum", "MSCI World Large Caps"],
-          ["Nur undervalued", "Ja"],
+          ["Nur undervalued", "Tabelle ja · Backtest alle Top-20"],
           ["Top Symbol", primaryWatchlistSymbol()],
         ]
           .map(([label, value]) => `<div class="metric"><span class="muted">${label}</span><strong>${value}</strong></div>`)
@@ -1441,6 +1445,8 @@
         const initialValue = backtest.initial_cash ?? inputs.initial_cash ?? firstPoint.equity;
         const endValue = metrics.final_equity ?? lastPoint.equity;
         document.querySelector("#backtest-metrics").innerHTML = [
+          ["Backtest ID", backtest.id ? `#${backtest.id}` : "-"],
+          ["Berechnet", dateTime(backtest.created_at)],
           ["Anfangswert", money(initialValue)],
           ["Endwert", money(endValue)],
           ["Gewinn/Verlust", money((endValue ?? 0) - (initialValue ?? 0))],
@@ -1476,6 +1482,9 @@
         );
         renderStatusList("#backtest-equity", [
           ["Symbol", backtest.symbol === "WATCHLIST_PORTFOLIO" ? "Watchlist Portfolio" : backtest.symbol],
+          ["Backtest ID", backtest.id ? `#${backtest.id}` : "-"],
+          ["Berechnet", dateTime(backtest.created_at)],
+          ["Hinweis", "Gleiche Daten + gleiche Parameter ergeben absichtlich gleiche Werte; ID/Zeit zeigen den neuen Lauf."],
           ["Getestete Ticker", (inputs.symbols || [inputs.symbol || backtest.symbol]).join(", ")],
           ["Gekauft/verkauft", trades.length ? Array.from(new Set(trades.map((trade) => trade.symbol))).join(", ") : "-"],
           ["Anfangswert", money(initialValue)],
@@ -1698,7 +1707,7 @@
           renderStatusList("#simulation", [["Status", "Simulation läuft gerade..."]]);
           const result = await api("/api/simulations/monte-carlo", {
             method: "POST",
-            body: json({ symbols: latestWatchlistSymbols.slice(0, 20), seed: 42, paths: 1000, horizon_days: 252, lookback_days: 252, data_source: "auto" }),
+            body: json({ symbols: latestAnalysisSymbols().slice(0, 20), seed: 42, paths: 1000, horizon_days: 252, lookback_days: 252, data_source: "auto" }),
           });
           renderMonteCarlo(result.summary);
           await refresh();
@@ -1729,7 +1738,7 @@
           daysInput.value = days;
           const result = await api("/api/backtests/run", {
             method: "POST",
-            body: json({ symbols: latestWatchlistSymbols.slice(0, 20), days, seed: 42, initial_cash: 10000, trade_notional: 1000, data_source: dataSource }),
+            body: json({ symbols: latestAnalysisSymbols().slice(0, 20), days, seed: 42, initial_cash: 10000, trade_notional: 1000, data_source: dataSource }),
           });
           renderBacktest(result.backtest);
           await refresh();
