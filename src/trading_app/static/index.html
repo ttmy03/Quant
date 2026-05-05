@@ -397,6 +397,44 @@
         height: 220px;
         width: 100%;
       }
+      .chart-line-legend {
+        border-top: 1px solid var(--line);
+        display: grid;
+        gap: 8px;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        margin-top: 10px;
+        padding-top: 10px;
+      }
+      .chart-line-legend-title {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+        grid-column: 1 / -1;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      .chart-line-legend-item {
+        align-items: center;
+        background: #f8fafc;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        display: flex;
+        gap: 8px;
+        justify-content: space-between;
+        padding: 7px 8px;
+      }
+      .chart-line-legend-label {
+        align-items: center;
+        display: inline-flex;
+        gap: 6px;
+        font-weight: 700;
+      }
+      .chart-line-swatch {
+        border-radius: 999px;
+        display: inline-block;
+        height: 10px;
+        width: 18px;
+      }
       .muted {
         color: var(--muted);
       }
@@ -801,6 +839,7 @@
               <div class="chart-card">
                 <h3>Fan Chart: P05 / Median / P95</h3>
                 <canvas id="monte-carlo-fan-chart" width="720" height="260" aria-label="Monte Carlo Fan Chart"></canvas>
+                <div id="monte-carlo-line-legend" class="chart-line-legend" aria-label="Portfolio-Linien im Graph mit Gewichtung"></div>
               </div>
               <div class="chart-card">
                 <h3>Endwert-Verteilung</h3>
@@ -1090,12 +1129,33 @@
         ctx.fillText(String(maxCount), 6, padding.top + 4);
       }
 
+      function renderMonteCarloLineLegend(perSymbol, palette) {
+        const element = document.querySelector("#monte-carlo-line-legend");
+        if (!element) return;
+        if (!perSymbol.length) {
+          element.innerHTML = '<div class="chart-line-legend-title">Portfolio-Linien im Graph</div><div class="muted">Noch keine einzelnen Symbol-Linien verfügbar.</div>';
+          return;
+        }
+        element.innerHTML = `
+          <div class="chart-line-legend-title">Portfolio-Linien im Graph · Gewichtung</div>
+          ${perSymbol.map((item, index) => {
+            const weight = Number(item.weight ?? (1 / perSymbol.length));
+            const color = palette[index % palette.length];
+            return `<div class="chart-line-legend-item">
+              <span class="chart-line-legend-label"><span class="chart-line-swatch" style="background:${color}"></span>${safe(item.symbol)} Median</span>
+              <span>${pct(weight)} Gewichtung</span>
+            </div>`;
+          }).join("")}
+        `;
+      }
+
       function renderMonteCarlo(summary) {
         if (!summary) {
           document.querySelector("#simulation-metrics").innerHTML = "";
           document.querySelector("#simulation").textContent = "Noch keine Simulation.";
           clearChart("monte-carlo-fan-chart");
           clearChart("monte-carlo-histogram");
+          renderMonteCarloLineLegend([], []);
           return;
         }
         const perSymbol = summary.per_symbol || [];
@@ -1113,8 +1173,8 @@
           .map(([label, value]) => `<div class="metric"><span class="muted">${label}</span><strong>${value}</strong></div>`)
           .join("");
         const fan = summary.fan_chart || [];
-        const palette = ["#0f766e", "#2563eb", "#9333ea", "#ea580c", "#0891b2", "#65a30d", "#db2777", "#475569", "#ca8a04", "#dc2626"];
-        const symbolLines = perSymbol.slice(0, 10).map((item, index) => ({
+        const palette = ["#0f766e", "#2563eb", "#9333ea", "#ea580c", "#0891b2", "#65a30d", "#db2777", "#475569", "#ca8a04", "#dc2626", "#7c3aed", "#0d9488", "#f97316", "#0284c7", "#be123c", "#16a34a", "#a16207", "#4f46e5", "#c026d3", "#334155"];
+        const symbolLines = perSymbol.map((item, index) => ({
           color: palette[index % palette.length],
           width: 1.2,
           points: (item.fan_chart || []).map((point) => ({ x: point.day, y: point.p50 })),
@@ -1131,9 +1191,9 @@
             { label: isPortfolio ? "Portfolio P05" : "P05", color: "#ef4444" },
             { label: isPortfolio ? "Portfolio Median" : "Median", color: "#0f766e" },
             { label: isPortfolio ? "Portfolio P95" : "P95", color: "#2563eb" },
-            ...(isPortfolio ? perSymbol.slice(0, 5).map((item, index) => ({ label: `${item.symbol} Median`, color: palette[index % palette.length] })) : []),
           ] },
         );
+        renderMonteCarloLineLegend(perSymbol, palette);
         renderHistogram("monte-carlo-histogram", summary.terminal_value_histogram || []);
         if (isPortfolio) {
           document.querySelector("#simulation").innerHTML = `

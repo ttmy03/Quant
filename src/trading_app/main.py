@@ -691,6 +691,11 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
                 }
             )
             per_symbol = []
+            portfolio_weight = round(1 / len(requested_symbols), 6) if requested_symbols else 1.0
+            portfolio_weights = [
+                {"symbol": symbol, "weight": portfolio_weight}
+                for symbol in requested_symbols
+            ]
             for index, payload in enumerate(symbol_payloads):
                 symbol_summary = simulate_portfolio_paths(
                     payload["returns"] or [0.0002],
@@ -707,15 +712,19 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
                         "bars_count": payload["bars_count"],
                     }
                 )
-                per_symbol.append(symbol_summary.model_dump(mode="json"))
+                symbol_payload = symbol_summary.model_dump(mode="json")
+                symbol_payload["weight"] = portfolio_weight
+                per_symbol.append(symbol_payload)
             metrics_payload = portfolio_summary.model_dump(mode="json")
             metrics_payload["portfolio_mode"] = "equal_weight_watchlist" if len(requested_symbols) > 1 else "single_symbol"
             metrics_payload["symbols"] = requested_symbols
+            metrics_payload["portfolio_weights"] = portfolio_weights
             metrics_payload["per_symbol"] = per_symbol
             inputs["resolved_data_source"] = metrics_payload["data_source"]
             inputs["fallback_reason"] = metrics_payload["fallback_reason"]
             inputs["bars_count"] = metrics_payload["bars_count"]
             inputs["portfolio_mode"] = metrics_payload["portfolio_mode"]
+            inputs["portfolio_weights"] = portfolio_weights
 
         record = storage.record_simulation(
             "monte_carlo",

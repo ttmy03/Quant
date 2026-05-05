@@ -291,8 +291,15 @@ def test_monte_carlo_can_simulate_all_watchlist_symbols_together(tmp_path) -> No
     assert summary["symbols"] == ["ALGM", "AMKR", "TREX"]
     assert len(summary["per_symbol"]) == 3
     assert {item["symbol"] for item in summary["per_symbol"]} == {"ALGM", "AMKR", "TREX"}
+    assert summary["portfolio_weights"] == [
+        {"symbol": "ALGM", "weight": 0.333333},
+        {"symbol": "AMKR", "weight": 0.333333},
+        {"symbol": "TREX", "weight": 0.333333},
+    ]
+    assert all(item["weight"] == 0.333333 for item in summary["per_symbol"])
     assert len(summary["fan_chart"]) == 31
     assert payload["simulation"]["inputs"]["portfolio_mode"] == "equal_weight_watchlist"
+    assert payload["simulation"]["inputs"]["portfolio_weights"] == summary["portfolio_weights"]
 
 
 
@@ -330,6 +337,7 @@ def test_dashboard_includes_visual_chart_canvases(tmp_path) -> None:
 
     assert response.status_code == 200
     assert 'id="monte-carlo-fan-chart"' in response.text
+    assert 'id="monte-carlo-line-legend"' in response.text
     assert 'id="monte-carlo-histogram"' in response.text
     assert 'id="backtest-equity-chart"' in response.text
     assert 'id="backtest-days"' in response.text
@@ -362,6 +370,9 @@ def test_dashboard_includes_visual_chart_canvases(tmp_path) -> None:
     assert "Gekauft/verkauft" in response.text
     assert "Watchlist Portfolio" in response.text
     assert "perSymbol" in response.text
+    assert "renderMonteCarloLineLegend" in response.text
+    assert "Gewichtung" in response.text
+    assert "Portfolio-Linien im Graph" in response.text
     assert 'id="simulation-metrics"' in response.text
     assert "Datenquelle" in response.text
     assert 'class="status-list muted trade-scroll"' in response.text
