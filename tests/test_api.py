@@ -231,5 +231,15 @@ def test_dashboard_includes_visual_chart_canvases(tmp_path) -> None:
     assert 'id="monte-carlo-fan-chart"' in response.text
     assert 'id="monte-carlo-histogram"' in response.text
     assert 'id="backtest-equity-chart"' in response.text
+    assert 'id="trading-control-card"' in response.text
+    assert 'id="enable-kill-switch"' in response.text
+    assert 'id="run-scheduler-once"' in response.text
+    assert 'id="positions-table"' in response.text
+    assert 'id="daily-report"' in response.text
+    assert 'id="alerts"' in response.text
+    assert "/api/trading-control/kill-switch" in response.text
+    assert "/api/scheduler/run-once" in response.text
+    assert "/api/alerts" in response.text
+    assert "/api/reports/daily" in response.text
     assert "renderLineChart" in response.text
     assert "renderHistogram" in response.text

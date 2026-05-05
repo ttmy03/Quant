@@ -74,6 +74,29 @@ class OrderSubmission(BaseModel):
     raw_response: dict[str, Any] = Field(default_factory=dict)
 
 
+class KillSwitchRequest(BaseModel):
+    enabled: bool = True
+    reason: str = Field(default="", max_length=500)
+
+
+class ControlReasonRequest(BaseModel):
+    reason: str = Field(default="", max_length=500)
+
+
+class SchedulerRunRequest(BaseModel):
+    symbols: list[str] | None = None
+    seed: int = 1
+    lookback_days: int = Field(default=60, ge=20, le=500)
+    qty: float = Field(default=1.0, gt=0)
+
+    @field_validator("symbols")
+    @classmethod
+    def uppercase_symbols(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        return [symbol.strip().upper() for symbol in value if symbol.strip()]
+
+
 class StrategyParamsModel(BaseModel):
     short_window: int = Field(default=5, ge=2, le=250)
     long_window: int = Field(default=20, ge=3, le=500)

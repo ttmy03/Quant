@@ -254,11 +254,35 @@
           <button class="secondary" id="run-backtest">Backtest</button>
         </div>
         <div class="metric-grid" id="metrics"></div>
+        <table>
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Menge</th>
+              <th>Marktwert</th>
+              <th>U/PnL</th>
+            </tr>
+          </thead>
+          <tbody id="positions-table"></tbody>
+        </table>
       </section>
 
       <section class="span-4">
         <h2>Sicherheitsmodus</h2>
         <pre id="config">Laedt...</pre>
+      </section>
+
+      <section class="span-4" id="trading-control-card">
+        <h2>Trading Control</h2>
+        <div class="toolbar">
+          <button class="secondary" id="enable-kill-switch">Kill Switch</button>
+          <button class="secondary" id="disable-kill-switch">Freigeben</button>
+          <button class="secondary" id="pause-trading">Pause</button>
+          <button class="secondary" id="resume-trading">Resume</button>
+          <button id="run-scheduler-once">Scheduler</button>
+        </div>
+        <pre id="trading-control">Laedt...</pre>
+        <pre id="scheduler-result" class="muted">Noch kein Scheduler-Lauf.</pre>
       </section>
 
       <section class="span-6">
@@ -333,6 +357,17 @@
           </thead>
           <tbody id="audit"></tbody>
         </table>
+      </section>
+
+      <section class="span-6">
+        <h2>Daily Report</h2>
+        <button class="secondary" id="load-daily-report">Aktualisieren</button>
+        <pre id="daily-report" class="muted">Noch kein Report.</pre>
+      </section>
+
+      <section class="span-6">
+        <h2>Alerts</h2>
+        <pre id="alerts" class="muted">Keine Alerts geladen.</pre>
       </section>
 
       <section class="span-12">
@@ -521,14 +556,55 @@
       function renderMetrics(status) {
         const account = status.account || {};
         const bars = status.latest_bars || [];
+        const summary = status.summary || {};
         document.querySelector("#metrics").innerHTML = [
           ["Alpaca", account.status || "unknown"],
           ["Paper Endpoint", account.paper_endpoint ? "ja" : "nein"],
+          ["Positionen", summary.positions_count ?? 0],
+          ["Positionswert", money(summary.positions_market_value)],
           ["Symbole", bars.map((bar) => bar.symbol).join(", ") || "-"],
           ["Letzter Preis", bars[0] ? bars[0].close.toFixed(2) : "-"],
         ]
           .map(([label, value]) => `<div class="metric"><span class="muted">${label}</span><strong>${value}</strong></div>`)
           .join("");
+      }
+
+      function renderPositions(positions) {
+        const rows = positions?.positions || [];
+        document.querySelector("#positions-table").innerHTML =
+          rows
+            .map(
+              (position) => `<tr>
+                <td>${position.symbol}</td>
+                <td>${position.qty}</td>
+                <td>${money(position.market_value)}</td>
+                <td>${money(position.unrealized_pl)}</td>
+              </tr>`,
+            )
+            .join("") || '<tr><td colspan="4" class="muted">Keine Positionen.</td></tr>';
+      }
+
+      function renderTradingControl(control) {
+        document.querySelector("#trading-control").textContent = json({
+          can_trade: control.can_trade,
+          kill_switch_active: control.kill_switch_active,
+          paused: control.paused,
+          reason: control.reason,
+          updated_at: control.updated_at,
+        });
+      }
+
+      function renderDailyReport(report) {
+        document.querySelector("#daily-report").textContent = json({
+          date: report.date,
+          portfolio: report.portfolio?.summary,
+          orders: report.orders,
+          backtests: { count: report.backtests?.count },
+          simulations: { count: report.simulations?.count },
+          audit_events: report.audit_events,
+          alerts: report.alerts,
+          safety: report.safety,
+        });
       }
 
       function renderOrders(orders) {
@@ -550,6 +626,18 @@
         document.querySelector("#audit").innerHTML = events
           .map((event) => `<tr><td>${event.created_at}</td><td>${event.event_type}</td><td>${event.message}</td></tr>`)
           .join("");
+      }
+
+      function renderAlerts(alerts) {
+        document.querySelector("#alerts").textContent = alerts && alerts.length
+          ? json(alerts.map((alert) => ({
+              severity: alert.severity,
+              category: alert.category,
+              title: alert.title,
+              message: alert.message,
+              created_at: alert.created_at,
+            })))
+          : "Keine aktiven Alerts.";
       }
 
       function renderBacktest(backtest) {
@@ -610,27 +698,73 @@
       }
 
       async function refresh() {
-        const [auth, config, status, strategy, orders, audit, backtests, simulations] = await Promise.all([
+        const [auth, config, status, control, strategy, orders, audit, alerts, backtests, simulations, report] = await Promise.all([
           api("/api/auth/me"),
           api("/api/config"),
           api("/api/portfolio/status"),
+          api("/api/trading-control"),
           api("/api/strategy"),
           api("/api/orders"),
           api("/api/audit-events"),
+          api("/api/alerts"),
           api("/api/backtests/latest"),
           api("/api/simulations/latest"),
+          api("/api/reports/daily"),
         ]);
         renderAuthState(auth);
         document.querySelector("#config").textContent = json(config);
         document.querySelector("#strategy").textContent = json(strategy);
         renderMetrics(status);
+        renderPositions(status.positions);
+        renderTradingControl(control);
         renderOrders(orders);
         renderAudit(audit);
+        renderAlerts(alerts);
         renderBacktest(backtests[0]);
         renderMonteCarlo(simulations[0]?.metrics);
+        renderDailyReport(report);
       }
 
       document.querySelector("#refresh").addEventListener("click", refresh);
+      document.querySelector("#enable-kill-switch").addEventListener("click", async () => {
+        await api("/api/trading-control/kill-switch", {
+          method: "POST",
+          body: json({ enabled: true, reason: "dashboard" }),
+        });
+        await refresh();
+      });
+      document.querySelector("#disable-kill-switch").addEventListener("click", async () => {
+        await api("/api/trading-control/kill-switch", {
+          method: "POST",
+          body: json({ enabled: false, reason: "dashboard" }),
+        });
+        await refresh();
+      });
+      document.querySelector("#pause-trading").addEventListener("click", async () => {
+        await api("/api/trading-control/pause", {
+          method: "POST",
+          body: json({ reason: "dashboard" }),
+        });
+        await refresh();
+      });
+      document.querySelector("#resume-trading").addEventListener("click", async () => {
+        await api("/api/trading-control/resume", {
+          method: "POST",
+          body: json({ reason: "dashboard" }),
+        });
+        await refresh();
+      });
+      document.querySelector("#run-scheduler-once").addEventListener("click", async () => {
+        const result = await api("/api/scheduler/run-once", {
+          method: "POST",
+          body: json({}),
+        });
+        document.querySelector("#scheduler-result").textContent = json(result);
+        await refresh();
+      });
+      document.querySelector("#load-daily-report").addEventListener("click", async () => {
+        renderDailyReport(await api("/api/reports/daily"));
+      });
       document.querySelector("#run-sim").addEventListener("click", async () => {
         const result = await api("/api/simulations/monte-carlo", {
           method: "POST",

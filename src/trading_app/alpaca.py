@@ -40,6 +40,55 @@ class AlpacaClient:
             "portfolio_value": payload.get("portfolio_value"),
         }
 
+    def positions(self) -> dict[str, Any]:
+        if not self.settings.alpaca_configured:
+            return {
+                "configured": False,
+                "source": "safe_fallback",
+                "positions": [],
+                "message": "Alpaca keys are not configured; no live position lookup was attempted.",
+            }
+
+        payload = self._request("GET", f"{self.settings.alpaca_base_url}/v2/positions")
+        return {
+            "configured": True,
+            "source": "alpaca",
+            "positions": [self._parse_position(position) for position in payload],
+        }
+
+    def portfolio_status(self, symbols: Iterable[str]) -> dict[str, Any]:
+        account = self.account_status()
+        positions = self.positions()
+        latest_bars = self.latest_bars(symbols)
+        position_rows = positions["positions"]
+        market_value = sum(float(position.get("market_value") or 0.0) for position in position_rows)
+        return {
+            "account": account,
+            "positions": positions,
+            "latest_bars": [bar.model_dump(mode="json") for bar in latest_bars],
+            "summary": {
+                "source": positions["source"],
+                "positions_count": len(position_rows),
+                "positions_market_value": round(market_value, 4),
+                "paper_endpoint": self.settings.is_paper_endpoint,
+                "alpaca_configured": self.settings.alpaca_configured,
+            },
+            "disclaimer": "Research and paper trading only. Not financial advice.",
+        }
+
+    @staticmethod
+    def _parse_position(raw_position: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "symbol": str(raw_position.get("symbol", "")).upper(),
+            "qty": float(raw_position.get("qty") or 0.0),
+            "side": raw_position.get("side"),
+            "market_value": float(raw_position.get("market_value") or 0.0),
+            "avg_entry_price": float(raw_position.get("avg_entry_price") or 0.0),
+            "current_price": float(raw_position.get("current_price") or 0.0),
+            "unrealized_pl": float(raw_position.get("unrealized_pl") or 0.0),
+            "unrealized_plpc": float(raw_position.get("unrealized_plpc") or 0.0),
+        }
+
     def latest_bars(self, symbols: Iterable[str]) -> list[Bar]:
         symbols = [symbol.upper() for symbol in symbols]
         if not symbols:

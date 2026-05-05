@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from html import escape
 from pathlib import Path
 from typing import Annotated
@@ -21,11 +23,16 @@ from trading_app.monte_carlo import simulate_portfolio_paths
 from trading_app.risk import RiskGuard
 from trading_app.schemas import (
     BacktestRequest,
+    ControlReasonRequest,
     ImprovementRequest,
+    KillSwitchRequest,
     MonteCarloRequest,
     OrderIntent,
+    OrderSubmission,
+    SchedulerRunRequest,
     StrategyParamsModel,
 )
+from trading_app.scheduler import DryRunSchedulerService
 from trading_app.storage import Storage
 from trading_app.strategy import MovingAverageCrossoverStrategy, StrategyParams
 
@@ -40,6 +47,70 @@ def add_security_headers(response: Response) -> Response:
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "same-origin"
     return response
+
+
+def build_alerts(storage: Storage, settings: Settings, limit: int = 50) -> list[dict[str, object]]:
+    """Derive unresolved operator alerts from control state and recent audit events."""
+    alerts: list[dict[str, object]] = []
+    control = storage.get_trading_control_state()
+    if control["kill_switch_active"]:
+        alerts.append(
+            {
+                "severity": "critical",
+                "category": "trading_control",
+                "title": "Kill-Switch aktiv",
+                "message": control.get("reason") or "Trading ist durch den Kill-Switch blockiert.",
+                "created_at": control["updated_at"],
+                "source": "trading_control_state",
+            }
+        )
+    if control["paused"]:
+        alerts.append(
+            {
+                "severity": "warning",
+                "category": "trading_control",
+                "title": "Trading pausiert",
+                "message": control.get("reason") or "Trading ist manuell pausiert.",
+                "created_at": control["updated_at"],
+                "source": "trading_control_state",
+            }
+        )
+    if not settings.dry_run or not settings.paper_trading_only:
+        alerts.append(
+            {
+                "severity": "critical",
+                "category": "safety",
+                "title": "Safety-Flags pruefen",
+                "message": "DRY_RUN und PAPER_TRADING_ONLY sollten fuer diese Phase aktiv bleiben.",
+                "created_at": datetime.now(UTC).isoformat(),
+                "source": "runtime_settings",
+            }
+        )
+
+    event_alert_map = {
+        "order_blocked_by_control": ("warning", "orders", "Order blockiert"),
+        "scheduler_run_blocked": ("warning", "scheduler", "Scheduler blockiert"),
+        "order_rejected": ("warning", "orders", "Order abgelehnt"),
+        "kill_switch_enabled": ("critical", "trading_control", "Kill-Switch aktiviert"),
+    }
+    for event in storage.list_audit_events(limit=limit):
+        mapped = event_alert_map.get(str(event["event_type"]))
+        if mapped is None:
+            continue
+        severity, category, title = mapped
+        alerts.append(
+            {
+                "severity": severity,
+                "category": category,
+                "title": title,
+                "message": event["message"],
+                "created_at": event["created_at"],
+                "source": "audit_events",
+                "audit_event_id": event["id"],
+                "payload": event.get("payload", {}),
+            }
+        )
+    return alerts[:limit]
 
 
 def login_form(error: str | None = None, status_code: int = 200) -> HTMLResponse:
@@ -224,14 +295,61 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
 
     @app.get("/api/portfolio/status")
     def portfolio_status() -> dict[str, object]:
-        client = AlpacaClient(settings)
-        account = client.account_status()
-        bars = client.latest_bars(settings.default_symbols)
-        return {
-            "account": account,
-            "latest_bars": [bar.model_dump(mode="json") for bar in bars],
-            "disclaimer": "Research and paper trading only. Not financial advice.",
-        }
+        return AlpacaClient(settings).portfolio_status(settings.default_symbols)
+
+    @app.get("/api/portfolio/positions")
+    def portfolio_positions() -> dict[str, object]:
+        return AlpacaClient(settings).positions()
+
+    @app.get("/api/trading-control")
+    def trading_control() -> dict[str, object]:
+        return storage.get_trading_control_state()
+
+    @app.post("/api/trading-control/kill-switch")
+    def set_kill_switch(request: KillSwitchRequest) -> dict[str, object]:
+        state = storage.update_trading_control_state(
+            kill_switch_active=request.enabled,
+            reason=request.reason,
+            actor="operator",
+        )
+        event_type = "kill_switch_enabled" if request.enabled else "kill_switch_disabled"
+        storage.record_audit(
+            event_type,
+            "Kill switch enabled." if request.enabled else "Kill switch disabled.",
+            {"reason": request.reason, "state": state},
+            actor="operator",
+        )
+        return state
+
+    @app.post("/api/trading-control/pause")
+    def pause_trading(request: ControlReasonRequest) -> dict[str, object]:
+        state = storage.update_trading_control_state(
+            paused=True,
+            reason=request.reason,
+            actor="operator",
+        )
+        storage.record_audit(
+            "trading_paused",
+            "Trading paused.",
+            {"reason": request.reason, "state": state},
+            actor="operator",
+        )
+        return state
+
+    @app.post("/api/trading-control/resume")
+    def resume_trading(request: ControlReasonRequest) -> dict[str, object]:
+        state = storage.update_trading_control_state(
+            paused=False,
+            reason=request.reason,
+            actor="operator",
+        )
+        storage.record_audit(
+            "trading_resumed",
+            "Trading resumed.",
+            {"reason": request.reason, "state": state},
+            actor="operator",
+        )
+        return state
 
     @app.get("/api/orders")
     def orders(limit: Annotated[int, Query(ge=1, le=500)] = 100) -> list[dict[str, object]]:
@@ -239,6 +357,27 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
 
     @app.post("/api/orders")
     def submit_order(intent: OrderIntent) -> dict[str, object]:
+        control = storage.get_trading_control_state()
+        if not control["can_trade"]:
+            submission = OrderSubmission(
+                accepted=False,
+                status="blocked_by_control",
+                dry_run=True,
+                message="Trading control state blocks order submission.",
+                raw_response={"control": control},
+            )
+            storage.record_audit(
+                "order_blocked_by_control",
+                submission.message,
+                {"intent": intent.model_dump(), "submission": submission.model_dump(), "control": control},
+                actor="operator",
+            )
+            return {
+                "order": None,
+                "risk": {"allowed": False, "reasons": ["trading control state blocks orders"], "estimated_notional": 0.0},
+                "submission": submission.model_dump(),
+            }
+
         client = AlpacaClient(settings)
         bars = client.latest_bars([intent.symbol])
         estimated_price = bars[0].close if bars else intent.limit_price or 0.0
@@ -255,6 +394,7 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
             dry_run=submission.dry_run,
             alpaca_order_id=submission.order_id,
             raw_response=submission.raw_response,
+            source="manual",
         )
         storage.record_audit(
             "order_submitted" if submission.accepted else "order_rejected",
@@ -271,6 +411,19 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
             "risk": risk_decision.model_dump(),
             "submission": submission.model_dump(),
         }
+
+    @app.post("/api/scheduler/run-once")
+    def run_scheduler_once(request: SchedulerRunRequest) -> dict[str, object]:
+        service = DryRunSchedulerService(settings, storage, app.state.strategy_params)
+        return service.run_once(request)
+
+    @app.get("/api/scheduler/runs")
+    def scheduler_runs(limit: Annotated[int, Query(ge=1, le=100)] = 20) -> list[dict[str, object]]:
+        return storage.list_scheduler_runs(limit=limit)
+
+    @app.get("/api/scheduler/signals")
+    def scheduler_signals(limit: Annotated[int, Query(ge=1, le=500)] = 100) -> list[dict[str, object]]:
+        return storage.list_scheduler_signals(limit=limit)
 
     @app.get("/api/strategy")
     def strategy() -> dict[str, object]:
@@ -406,6 +559,57 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
     @app.get("/api/audit-events")
     def audit_events(limit: Annotated[int, Query(ge=1, le=500)] = 100) -> list[dict[str, object]]:
         return storage.list_audit_events(limit=limit)
+
+    @app.get("/api/alerts")
+    def alerts(limit: Annotated[int, Query(ge=1, le=100)] = 50) -> list[dict[str, object]]:
+        return build_alerts(storage, settings, limit=limit)
+
+    @app.get("/api/reports/daily")
+    def daily_report(report_date: Annotated[str | None, Query(alias="date")] = None) -> dict[str, object]:
+        selected_date = report_date or datetime.now(UTC).date().isoformat()
+
+        def from_selected_day(record: dict[str, object]) -> bool:
+            return str(record.get("created_at", "")).startswith(selected_date)
+
+        orders = [order for order in storage.list_orders(limit=500) if from_selected_day(order)]
+        backtests = [backtest for backtest in storage.list_backtests(limit=500) if from_selected_day(backtest)]
+        simulations = [simulation for simulation in storage.list_simulations(limit=500) if from_selected_day(simulation)]
+        audit_events = [event for event in storage.list_audit_events(limit=500) if from_selected_day(event)]
+        alerts = [alert for alert in build_alerts(storage, settings, limit=100) if from_selected_day(alert)]
+        order_statuses = Counter(str(order["status"]) for order in orders)
+        audit_event_types = Counter(str(event["event_type"]) for event in audit_events)
+        return {
+            "date": selected_date,
+            "portfolio": AlpacaClient(settings).portfolio_status(settings.default_symbols),
+            "orders": {
+                "count": len(orders),
+                "dry_run_count": sum(1 for order in orders if order["dry_run"]),
+                "statuses": dict(order_statuses),
+                "latest": orders[:5],
+            },
+            "backtests": {
+                "count": len(backtests),
+                "latest": backtests[:3],
+            },
+            "simulations": {
+                "count": len(simulations),
+                "latest": simulations[:3],
+            },
+            "audit_events": {
+                "count": len(audit_events),
+                "event_types": dict(audit_event_types),
+                "latest": audit_events[:10],
+            },
+            "alerts": {
+                "count": len(alerts),
+                "critical_count": sum(1 for alert in alerts if alert["severity"] == "critical"),
+                "latest": alerts[:10],
+            },
+            "safety": {
+                "dry_run": settings.dry_run,
+                "paper_trading_only": settings.paper_trading_only,
+            },
+        }
 
     return app
 
