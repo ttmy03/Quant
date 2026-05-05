@@ -1099,6 +1099,9 @@
           return;
         }
         document.querySelector("#simulation-metrics").innerHTML = [
+          ["Symbol", summary.symbol || primaryWatchlistSymbol()],
+          ["Datenquelle", summary.data_source || "-"],
+          ["Bars", summary.bars_count ?? 0],
           ["Median Endwert", money(summary.median_terminal_value)],
           ["P05 Endwert", money(summary.p05_terminal_value)],
           ["P95 Endwert", money(summary.p95_terminal_value)],
@@ -1580,7 +1583,7 @@
           renderStatusList("#simulation", [["Status", "Simulation läuft gerade..."]]);
           const result = await api("/api/simulations/monte-carlo", {
             method: "POST",
-            body: json({ seed: 42, paths: 1000, horizon_days: 252 }),
+            body: json({ symbol: primaryWatchlistSymbol(), seed: 42, paths: 1000, horizon_days: 252, lookback_days: 252, data_source: "auto" }),
           });
           renderMonteCarlo(result.summary);
           await refresh();

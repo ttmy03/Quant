@@ -204,7 +204,7 @@ def test_monte_carlo_endpoint_returns_visualization_series(tmp_path) -> None:
     with ASGITestClient(app) as client:
         response = client.post(
             "/api/simulations/monte-carlo",
-            json={"seed": 7, "paths": 200, "horizon_days": 60, "initial_value": 10_000},
+            json={"symbol": "AMKR", "seed": 7, "paths": 200, "horizon_days": 60, "lookback_days": 80, "initial_value": 10_000, "data_source": "synthetic"},
         )
 
     assert response.status_code == 200
@@ -213,6 +213,11 @@ def test_monte_carlo_endpoint_returns_visualization_series(tmp_path) -> None:
     histogram = summary["terminal_value_histogram"]
 
     assert len(fan_chart) == 61
+    assert summary["symbol"] == "AMKR"
+    assert summary["data_source"] == "synthetic"
+    assert summary["bars_count"] == 80
+    assert response.json()["simulation"]["inputs"]["symbol"] == "AMKR"
+    assert response.json()["simulation"]["inputs"]["resolved_data_source"] == "synthetic"
     assert fan_chart[0] == {"day": 0, "p05": 10000.0, "p50": 10000.0, "p95": 10000.0}
     assert fan_chart[-1]["day"] == 60
     assert fan_chart[-1]["p05"] <= fan_chart[-1]["p50"] <= fan_chart[-1]["p95"]
@@ -275,6 +280,10 @@ def test_dashboard_includes_visual_chart_canvases(tmp_path) -> None:
     assert 'api("/api/watchlist")' in response.text
     assert "renderWatchlist" in response.text
     assert "primaryWatchlistSymbol" in response.text
+    assert 'body: json({ symbol: primaryWatchlistSymbol(), seed: 42, paths: 1000, horizon_days: 252, lookback_days: 252, data_source: "auto" })' in response.text
+    assert 'body: json({ symbol: primaryWatchlistSymbol(), days, seed: 42, initial_cash: 10000, trade_notional: 1000, data_source: dataSource })' in response.text
+    assert 'id="simulation-metrics"' in response.text
+    assert "Datenquelle" in response.text
     assert 'class="status-list muted trade-scroll"' in response.text
     assert 'id="portfolio-live-status"' in response.text
     assert 'U/PnL %' in response.text

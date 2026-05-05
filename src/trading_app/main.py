@@ -605,8 +605,24 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
     @app.post("/api/simulations/monte-carlo")
     def monte_carlo(request: MonteCarloRequest) -> dict[str, object]:
         returns = request.returns
+        fallback_reason = None
+        data_source = "custom_returns" if returns is not None else "synthetic"
+        bars_count = 0
         if returns is None:
-            bars = generate_synthetic_bars(days=180, seed=request.seed)
+            bars = []
+            if request.data_source in {"auto", "alpaca"}:
+                try:
+                    bars = AlpacaClient(settings).historical_bars(request.symbol, days=request.lookback_days)
+                except Exception as exc:  # noqa: BLE001 - external market-data failure should not break risk simulation
+                    fallback_reason = f"Alpaca historical data unavailable: {exc}"
+            if bars:
+                data_source = "alpaca"
+            else:
+                bars = generate_synthetic_bars(symbol=request.symbol, days=request.lookback_days, seed=request.seed)
+                data_source = "synthetic_fallback" if request.data_source == "alpaca" else "synthetic"
+                if request.data_source in {"auto", "alpaca"}:
+                    fallback_reason = fallback_reason or "Alpaca historical data unavailable; synthetic fallback was used."
+            bars_count = len(bars)
             returns = returns_from_bars(bars)
         summary = simulate_portfolio_paths(
             returns,
@@ -615,20 +631,31 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
             paths=request.paths,
             seed=request.seed,
             ruin_threshold=request.ruin_threshold,
+        ).model_copy(
+            update={
+                "symbol": request.symbol,
+                "data_source": data_source,
+                "fallback_reason": fallback_reason,
+                "bars_count": bars_count,
+            }
         )
+        inputs = request.model_dump(mode="json")
+        inputs["resolved_data_source"] = data_source
+        inputs["fallback_reason"] = fallback_reason
+        inputs["bars_count"] = bars_count
         record = storage.record_simulation(
             "monte_carlo",
             request.seed,
-            request.model_dump(),
-            summary.model_dump(),
+            inputs,
+            summary.model_dump(mode="json"),
         )
         storage.record_audit(
             "simulation_completed",
             "Monte Carlo simulation completed.",
-            {"simulation_id": record["id"], "metrics": summary.model_dump()},
+            {"simulation_id": record["id"], "metrics": summary.model_dump(mode="json"), "data_source": data_source},
             actor="codex",
         )
-        return {"simulation": record, "summary": summary.model_dump()}
+        return {"simulation": record, "summary": summary.model_dump(mode="json")}
 
     @app.get("/api/simulations/latest")
     def latest_simulations(limit: Annotated[int, Query(ge=1, le=100)] = 5) -> list[dict[str, object]]:

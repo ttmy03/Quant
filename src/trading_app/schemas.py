@@ -114,12 +114,20 @@ class StrategyParamsModel(BaseModel):
 
 
 class MonteCarloRequest(BaseModel):
+    symbol: str = "ALGM"
     returns: list[float] | None = None
     initial_value: float = Field(default=10_000.0, gt=0)
     horizon_days: int = Field(default=252, ge=1, le=2520)
+    lookback_days: int = Field(default=252, ge=20, le=5000)
     paths: int = Field(default=1000, ge=10, le=100_000)
     seed: int = 42
     ruin_threshold: float = Field(default=0.7, gt=0.0, lt=1.0)
+    data_source: BacktestDataSource = "auto"
+
+    @field_validator("symbol")
+    @classmethod
+    def uppercase_symbol(cls, value: str) -> str:
+        return value.upper()
 
 
 class MonteCarloFanPoint(BaseModel):
@@ -136,6 +144,10 @@ class MonteCarloHistogramBucket(BaseModel):
 
 
 class MonteCarloSummary(BaseModel):
+    symbol: str = "-"
+    data_source: str = "synthetic"
+    fallback_reason: str | None = None
+    bars_count: int = 0
     seed: int
     paths: int
     horizon_days: int
