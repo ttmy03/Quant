@@ -425,6 +425,54 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
     def scheduler_signals(limit: Annotated[int, Query(ge=1, le=500)] = 100) -> list[dict[str, object]]:
         return storage.list_scheduler_signals(limit=limit)
 
+
+    @app.get("/api/trades/active")
+    def active_trades(limit: Annotated[int, Query(ge=1, le=100)] = 50) -> dict[str, object]:
+        client = AlpacaClient(settings)
+        try:
+            open_orders = client.open_orders(limit=limit)
+        except Exception as exc:  # noqa: BLE001 - keep dashboard usable during broker/API outages
+            open_orders = {
+                "configured": settings.alpaca_configured,
+                "source": "alpaca_error",
+                "orders": [],
+                "message": f"Open-order lookup failed: {exc}",
+            }
+
+        local_orders = storage.list_orders(limit=limit)
+        active_statuses = {
+            "accepted",
+            "new",
+            "pending_new",
+            "partially_filled",
+            "dry_run_accepted",
+            "submitted",
+        }
+        active_local_orders = [
+            order for order in local_orders if str(order.get("status", "")).lower() in active_statuses
+        ]
+        signals = storage.list_scheduler_signals(limit=limit)
+        action_signals = [signal for signal in signals if signal.get("action") in {"BUY", "SELL"}]
+        active_trades = [
+            {"type": "local_order", **order} for order in active_local_orders
+        ] + [
+            {"type": "alpaca_open_order", **order} for order in open_orders.get("orders", [])
+        ]
+        return {
+            "source": "local_dry_run_plus_alpaca_if_configured",
+            "summary": {
+                "active_trades_count": len(active_trades),
+                "local_orders_count": len(active_local_orders),
+                "open_alpaca_orders_count": len(open_orders.get("orders", [])),
+                "latest_signals_count": len(action_signals),
+                "alpaca_orders_source": open_orders.get("source"),
+            },
+            "local_orders": active_local_orders,
+            "open_alpaca_orders": open_orders,
+            "latest_action_signals": action_signals[:10],
+            "active_trades": active_trades[:limit],
+        }
+
     @app.get("/api/strategy")
     def strategy() -> dict[str, object]:
         params = app.state.strategy_params

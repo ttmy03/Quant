@@ -235,6 +235,12 @@ def test_dashboard_includes_visual_chart_canvases(tmp_path) -> None:
     assert 'id="enable-kill-switch"' in response.text
     assert 'id="run-scheduler-once"' in response.text
     assert 'id="positions-table"' in response.text
+    assert 'id="balance-metrics"' in response.text
+    assert 'id="active-trade-metrics"' in response.text
+    assert 'id="active-trades"' in response.text
+    assert 'api("/api/trades/active")' in response.text
+    assert "Balance / Kontostand" in response.text
+    assert "Aktuelle Trades & laufende Orders" in response.text
     assert 'id="daily-report"' in response.text
     assert 'id="alerts"' in response.text
     assert 'id="quick-start"' in response.text

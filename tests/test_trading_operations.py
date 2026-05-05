@@ -185,9 +185,15 @@ def test_portfolio_status_positions_and_daily_report_have_safe_fallback(tmp_path
     assert status_response.status_code == 200
     status = status_response.json()
     assert status["account"]["configured"] is False
+    assert status["account"]["cash"] == 0.0
+    assert status["account"]["equity"] == 0.0
+    assert status["account"]["buying_power"] == 0.0
     assert status["positions"]["configured"] is False
     assert status["summary"]["positions_count"] == 0
     assert status["summary"]["source"] == "safe_fallback"
+    assert status["balance"]["cash"] == 0.0
+    assert status["balance"]["equity"] == 0.0
+    assert status["balance"]["buying_power"] == 0.0
 
     assert positions_response.status_code == 200
     assert positions_response.json()["positions"] == []
@@ -203,3 +209,29 @@ def test_portfolio_status_positions_and_daily_report_have_safe_fallback(tmp_path
     assert report["audit_events"]["count"] >= 3
     assert report["alerts"]["count"] >= 0
     assert report["safety"] == {"dry_run": True, "paper_trading_only": True}
+
+
+def test_active_trades_endpoint_surfaces_local_dry_run_orders_and_signals(tmp_path) -> None:
+    settings = Settings(
+        DATABASE_PATH=tmp_path / "test.sqlite3",
+        AUTH_ENABLED=False,
+        DEFAULT_SYMBOLS="AAPL",
+        ALPACA_API_KEY="",
+        ALPACA_SECRET_KEY="",
+        _env_file=None,
+    )
+    app = create_app(settings=settings, storage=Storage(settings.database_path))
+
+    with ASGITestClient(app) as client:
+        client.post("/api/orders", json={"symbol": "AAPL", "side": "buy", "qty": 1})
+        client.post("/api/scheduler/run-once", json={"symbols": ["AAPL"], "seed": 1})
+        response = client.get("/api/trades/active")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["local_orders_count"] >= 1
+    assert payload["summary"]["active_trades_count"] >= 1
+    assert payload["summary"]["open_alpaca_orders_count"] == 0
+    assert payload["local_orders"][0]["symbol"] == "AAPL"
+    assert payload["local_orders"][0]["status"] == "dry_run_accepted"
+    assert payload["source"] == "local_dry_run_plus_alpaca_if_configured"

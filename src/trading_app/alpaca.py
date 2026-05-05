@@ -27,6 +27,11 @@ class AlpacaClient:
                 "configured": False,
                 "status": "not_configured",
                 "paper_endpoint": self.settings.is_paper_endpoint,
+                "cash": 0.0,
+                "equity": 0.0,
+                "buying_power": 0.0,
+                "portfolio_value": 0.0,
+                "last_equity": 0.0,
                 "message": "Alpaca keys are not configured; dashboard is using safe local mode.",
             }
 
@@ -36,8 +41,12 @@ class AlpacaClient:
             "status": payload.get("status", "unknown"),
             "paper_endpoint": self.settings.is_paper_endpoint,
             "account_number": payload.get("account_number"),
-            "buying_power": payload.get("buying_power"),
-            "portfolio_value": payload.get("portfolio_value"),
+            "cash": self._float_or_zero(payload.get("cash")),
+            "equity": self._float_or_zero(payload.get("equity") or payload.get("portfolio_value")),
+            "buying_power": self._float_or_zero(payload.get("buying_power")),
+            "portfolio_value": self._float_or_zero(payload.get("portfolio_value")),
+            "last_equity": self._float_or_zero(payload.get("last_equity")),
+            "currency": payload.get("currency", "USD"),
         }
 
     def positions(self) -> dict[str, Any]:
@@ -62,8 +71,17 @@ class AlpacaClient:
         latest_bars = self.latest_bars(symbols)
         position_rows = positions["positions"]
         market_value = sum(float(position.get("market_value") or 0.0) for position in position_rows)
+        balance = {
+            "cash": self._float_or_zero(account.get("cash")),
+            "equity": self._float_or_zero(account.get("equity")),
+            "buying_power": self._float_or_zero(account.get("buying_power")),
+            "portfolio_value": self._float_or_zero(account.get("portfolio_value")),
+            "last_equity": self._float_or_zero(account.get("last_equity")),
+            "currency": account.get("currency", "USD"),
+        }
         return {
             "account": account,
+            "balance": balance,
             "positions": positions,
             "latest_bars": [bar.model_dump(mode="json") for bar in latest_bars],
             "summary": {
@@ -76,6 +94,32 @@ class AlpacaClient:
             "disclaimer": "Research and paper trading only. Not financial advice.",
         }
 
+    def open_orders(self, limit: int = 50) -> dict[str, Any]:
+        if not self.settings.alpaca_configured:
+            return {
+                "configured": False,
+                "source": "safe_fallback",
+                "orders": [],
+                "message": "Alpaca keys are not configured; no open-order lookup was attempted.",
+            }
+        payload = self._request(
+            "GET",
+            f"{self.settings.alpaca_base_url}/v2/orders",
+            params={"status": "open", "limit": str(limit), "direction": "desc"},
+        )
+        return {
+            "configured": True,
+            "source": "alpaca",
+            "orders": [self._parse_order(order) for order in payload],
+        }
+
+    @staticmethod
+    def _float_or_zero(value: Any) -> float:
+        try:
+            return float(value or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
     @staticmethod
     def _parse_position(raw_position: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -87,6 +131,22 @@ class AlpacaClient:
             "current_price": float(raw_position.get("current_price") or 0.0),
             "unrealized_pl": float(raw_position.get("unrealized_pl") or 0.0),
             "unrealized_plpc": float(raw_position.get("unrealized_plpc") or 0.0),
+        }
+
+    @staticmethod
+    def _parse_order(raw_order: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": raw_order.get("id"),
+            "created_at": raw_order.get("created_at"),
+            "submitted_at": raw_order.get("submitted_at"),
+            "symbol": str(raw_order.get("symbol", "")).upper(),
+            "side": raw_order.get("side"),
+            "qty": AlpacaClient._float_or_zero(raw_order.get("qty")),
+            "filled_qty": AlpacaClient._float_or_zero(raw_order.get("filled_qty")),
+            "type": raw_order.get("type"),
+            "status": raw_order.get("status"),
+            "limit_price": AlpacaClient._float_or_zero(raw_order.get("limit_price")) if raw_order.get("limit_price") is not None else None,
+            "notional": AlpacaClient._float_or_zero(raw_order.get("notional")) if raw_order.get("notional") is not None else None,
         }
 
     def latest_bars(self, symbols: Iterable[str]) -> list[Bar]:

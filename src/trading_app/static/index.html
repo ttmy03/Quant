@@ -268,6 +268,30 @@
         font-size: 18px;
         margin-top: 4px;
       }
+      .metric.balance-card {
+        background: linear-gradient(135deg, #ecfdf5, #ffffff);
+        border-color: #99f6e4;
+      }
+      .metric.balance-card strong {
+        color: var(--accent-dark);
+        font-size: 24px;
+      }
+      .trade-card {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        display: grid;
+        gap: 8px;
+        padding: 12px;
+      }
+      .trade-card-header {
+        align-items: center;
+        display: flex;
+        gap: 8px;
+        justify-content: space-between;
+      }
+      .trade-card strong {
+        font-size: 16px;
+      }
       .chart-grid {
         display: grid;
         gap: 12px;
@@ -598,9 +622,15 @@
           </div>
         </div>
         <div class="group-grid">
-          <section class="span-12">
-            <h3>Konto & Positionen</h3>
-            <div class="metric-grid" id="metrics"></div>
+          <section class="span-12 emphasis-card">
+            <h3>Balance / Kontostand</h3>
+            <p class="helper-text">Hier stehen Cash, Equity und Buying Power direkt sichtbar. Wenn Alpaca nicht erreichbar ist, zeigt die App sichere Fallback-Werte und markiert die Quelle.</p>
+            <div class="metric-grid" id="balance-metrics"></div>
+          </section>
+
+          <section class="span-6">
+            <h3>Positionen</h3>
+            <p class="helper-text">Aktuelle Paper-Positionen aus Alpaca. Ohne Alpaca-Zugriff bleibt die Liste leer und die Quelle steht oben bei Balance.</p>
             <table>
               <thead>
                 <tr>
@@ -612,6 +642,13 @@
               </thead>
               <tbody id="positions-table"></tbody>
             </table>
+          </section>
+
+          <section class="span-6">
+            <h3>Aktuelle Trades & laufende Orders</h3>
+            <p class="helper-text">Zeigt offene Alpaca-Orders und lokale Dry-Run Orders/Signale, damit du siehst, was gerade aktiv ist oder zuletzt ausgelöst wurde.</p>
+            <div class="metric-grid" id="active-trade-metrics"></div>
+            <div id="active-trades" class="status-list muted">Aktive Trades werden geladen...</div>
           </section>
         </div>
       </div>
@@ -985,19 +1022,24 @@
         ].join(" | ");
       }
 
-      function renderMetrics(status) {
+      function renderBalanceMetrics(status) {
         const account = status.account || {};
+        const balance = status.balance || {};
         const bars = status.latest_bars || [];
         const summary = status.summary || {};
-        document.querySelector("#metrics").innerHTML = [
-          ["Alpaca", account.status || "unknown"],
-          ["Paper Endpoint", account.paper_endpoint ? "ja" : "nein"],
-          ["Positionen", summary.positions_count ?? 0],
-          ["Positionswert", money(summary.positions_market_value)],
-          ["Symbole", bars.map((bar) => bar.symbol).join(", ") || "-"],
-          ["Letzter Preis", bars[0] ? bars[0].close.toFixed(2) : "-"],
+        document.querySelector("#balance-metrics").innerHTML = [
+          ["Cash", money(balance.cash ?? account.cash), "balance-card"],
+          ["Equity", money(balance.equity ?? account.equity ?? account.portfolio_value), "balance-card"],
+          ["Buying Power", money(balance.buying_power ?? account.buying_power), "balance-card"],
+          ["Portfolio Value", money(balance.portfolio_value ?? account.portfolio_value), "balance-card"],
+          ["Alpaca", account.status || "unknown", ""],
+          ["Quelle", summary.source || "-", ""],
+          ["Positionen", summary.positions_count ?? 0, ""],
+          ["Positionswert", money(summary.positions_market_value), ""],
+          ["Symbole", bars.map((bar) => bar.symbol).join(", ") || "-", ""],
+          ["Letzter Preis", bars[0] ? bars[0].close.toFixed(2) : "-", ""],
         ]
-          .map(([label, value]) => `<div class="metric"><span class="muted">${label}</span><strong>${value}</strong></div>`)
+          .map(([label, value, extraClass]) => `<div class="metric ${extraClass}"><span class="muted">${label}</span><strong>${value}</strong></div>`)
           .join("");
       }
 
@@ -1014,6 +1056,58 @@
               </tr>`,
             )
             .join("") || '<tr><td colspan="4" class="muted">Keine Positionen.</td></tr>';
+      }
+
+      function renderActiveTrades(active) {
+        const summary = active?.summary || {};
+        document.querySelector("#active-trade-metrics").innerHTML = [
+          ["Aktiv", summary.active_trades_count ?? 0],
+          ["Lokale Dry-Run Orders", summary.local_orders_count ?? 0],
+          ["Offene Alpaca Orders", summary.open_alpaca_orders_count ?? 0],
+          ["Signale", summary.latest_signals_count ?? 0],
+        ]
+          .map(([label, value]) => `<div class="metric"><span class="muted">${label}</span><strong>${value}</strong></div>`)
+          .join("");
+
+        const localOrders = active?.local_orders || [];
+        const alpacaOrders = active?.open_alpaca_orders?.orders || [];
+        const signals = active?.latest_action_signals || [];
+        const cards = [
+          ...alpacaOrders.map((order) => ({
+            kind: "Alpaca offen",
+            symbol: order.symbol,
+            side: order.side,
+            qty: order.qty,
+            status: order.status,
+            time: order.submitted_at || order.created_at,
+          })),
+          ...localOrders.map((order) => ({
+            kind: order.source === "scheduler" ? "Scheduler Dry-Run" : "Manuell Dry-Run",
+            symbol: order.symbol,
+            side: order.side,
+            qty: order.qty,
+            status: order.status,
+            time: order.created_at,
+          })),
+        ];
+        const element = document.querySelector("#active-trades");
+        if (!cards.length && !signals.length) {
+          element.innerHTML = '<div class="empty-state">Keine laufenden Trades oder offenen Orders. Starte den Scheduler oder prüfe Alpaca-Orders.</div>';
+          return;
+        }
+        const cardHtml = cards
+          .map((trade) => `<div class="trade-card">
+            <div class="trade-card-header"><strong>${trade.symbol}</strong>${badge(trade.kind, trade.kind.includes("Alpaca") ? "ok" : "warn")}</div>
+            <div class="status-row"><div class="label">Seite</div><div class="value">${trade.side}</div></div>
+            <div class="status-row"><div class="label">Menge</div><div class="value">${trade.qty}</div></div>
+            <div class="status-row"><div class="label">Status</div><div class="value">${trade.status}</div></div>
+            <div class="status-row"><div class="label">Zeit</div><div class="value">${dateTime(trade.time)}</div></div>
+          </div>`)
+          .join("");
+        const signalHtml = signals.slice(0, 5)
+          .map((signal) => `<div class="status-row"><div class="label">Signal ${signal.symbol}</div><div class="value">${signal.action} · ${pct(signal.confidence)} · ${signal.reason}</div></div>`)
+          .join("");
+        element.innerHTML = `${cardHtml}${signalHtml ? `<div class="status-list">${signalHtml}</div>` : ""}`;
       }
 
       function renderTradingControl(control) {
@@ -1134,10 +1228,11 @@
       }
 
       async function refresh() {
-        const [auth, config, status, control, strategy, orders, audit, alerts, backtests, simulations, report] = await Promise.all([
+        const [auth, config, status, activeTrades, control, strategy, orders, audit, alerts, backtests, simulations, report] = await Promise.all([
           api("/api/auth/me"),
           api("/api/config"),
           api("/api/portfolio/status"),
+          api("/api/trades/active"),
           api("/api/trading-control"),
           api("/api/strategy"),
           api("/api/orders"),
@@ -1163,8 +1258,9 @@
           ["Min Crossover", pct(strategy.params?.min_crossover_pct)],
           ["Demo Signal", `${strategy.latest_demo_signal?.action || "-"} (${strategy.latest_demo_signal?.reason || "-"})`],
         ]);
-        renderMetrics(status);
+        renderBalanceMetrics(status);
         renderPositions(status.positions);
+        renderActiveTrades(activeTrades);
         renderTradingControl(control);
         renderOrders(orders);
         renderAudit(audit);
