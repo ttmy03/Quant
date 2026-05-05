@@ -238,6 +238,13 @@ def test_dashboard_includes_visual_chart_canvases(tmp_path) -> None:
     assert 'id="balance-metrics"' in response.text
     assert 'id="active-trade-metrics"' in response.text
     assert 'id="active-trades"' in response.text
+    assert 'class="status-list muted trade-scroll"' in response.text
+    assert 'id="portfolio-live-status"' in response.text
+    assert 'U/PnL %' in response.text
+    assert "signedPct" in response.text
+    assert "pnlClass" in response.text
+    assert "refreshLivePortfolio" in response.text
+    assert "setInterval" in response.text
     assert 'api("/api/trades/active")' in response.text
     assert "Balance / Kontostand" in response.text
     assert "Aktuelle Trades & laufende Orders" in response.text

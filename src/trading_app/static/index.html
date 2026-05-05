@@ -276,21 +276,67 @@
         color: var(--accent-dark);
         font-size: 24px;
       }
-      .trade-card {
+      .pnl-positive {
+        color: #166534;
+        font-weight: 800;
+      }
+      .pnl-negative {
+        color: var(--danger);
+        font-weight: 800;
+      }
+      .pnl-flat {
+        color: var(--muted);
+        font-weight: 700;
+      }
+      .live-indicator {
+        color: var(--muted);
+        font-size: 12px;
+        margin: -4px 0 10px;
+      }
+      .trade-scroll {
         border: 1px solid var(--line);
         border-radius: 10px;
+        max-height: 260px;
+        overflow-y: auto;
+        padding: 8px;
+      }
+      .compact-metrics {
+        gap: 6px;
+        grid-template-columns: repeat(4, minmax(70px, 1fr));
+        margin-bottom: 8px;
+      }
+      .compact-metrics .metric {
+        padding: 7px;
+      }
+      .compact-metrics .metric span {
+        font-size: 11px;
+      }
+      .compact-metrics .metric strong {
+        font-size: 14px;
+      }
+      .trade-card {
+        border: 1px solid var(--line);
+        border-radius: 8px;
         display: grid;
-        gap: 8px;
-        padding: 12px;
+        gap: 4px;
+        margin-bottom: 6px;
+        padding: 8px;
       }
       .trade-card-header {
         align-items: center;
         display: flex;
-        gap: 8px;
+        gap: 6px;
         justify-content: space-between;
       }
       .trade-card strong {
-        font-size: 16px;
+        font-size: 13px;
+      }
+      .trade-card .status-row {
+        padding: 3px 0;
+      }
+      .trade-card .label,
+      .trade-card .value {
+        font-size: 11px;
       }
       .chart-grid {
         display: grid;
@@ -631,6 +677,7 @@
           <section class="span-6">
             <h3>Positionen</h3>
             <p class="helper-text">Aktuelle Paper-Positionen aus Alpaca. Ohne Alpaca-Zugriff bleibt die Liste leer und die Quelle steht oben bei Balance.</p>
+            <p class="live-indicator" id="portfolio-live-status">Live-Verfolgung startet...</p>
             <table>
               <thead>
                 <tr>
@@ -638,6 +685,7 @@
                   <th>Menge</th>
                   <th>Marktwert</th>
                   <th>U/PnL</th>
+                  <th>U/PnL %</th>
                 </tr>
               </thead>
               <tbody id="positions-table"></tbody>
@@ -646,9 +694,9 @@
 
           <section class="span-6">
             <h3>Aktuelle Trades & laufende Orders</h3>
-            <p class="helper-text">Zeigt offene Alpaca-Orders und lokale Dry-Run Orders/Signale, damit du siehst, was gerade aktiv ist oder zuletzt ausgelöst wurde.</p>
-            <div class="metric-grid" id="active-trade-metrics"></div>
-            <div id="active-trades" class="status-list muted">Aktive Trades werden geladen...</div>
+            <p class="helper-text">Kompakte Ansicht mit eigenem Scrollfenster: offene Alpaca-Orders, lokale Dry-Run Orders und letzte Signale.</p>
+            <div class="metric-grid compact-metrics" id="active-trade-metrics"></div>
+            <div id="active-trades" class="status-list muted trade-scroll">Aktive Trades werden geladen...</div>
           </section>
         </div>
       </div>
@@ -823,6 +871,17 @@
       const json = (value) => JSON.stringify(value, null, 2);
       const money = (value) => (Number.isFinite(Number(value)) ? Number(value).toFixed(2) : "-");
       const pct = (value) => (Number.isFinite(Number(value)) ? `${(Number(value) * 100).toFixed(2)}%` : "-");
+      const signedPct = (value) => {
+        const number = Number(value);
+        if (!Number.isFinite(number)) return "-";
+        const sign = number > 0 ? "+" : "";
+        return `${sign}${(number * 100).toFixed(2)}%`;
+      };
+      const pnlClass = (value) => {
+        const number = Number(value);
+        if (!Number.isFinite(number) || number === 0) return "pnl-flat";
+        return number > 0 ? "pnl-positive" : "pnl-negative";
+      };
       const yesNo = (value) => (value ? "Ja" : "Nein");
       const safe = (value) => value ?? "-";
       const dateTime = (value) => {
@@ -1052,10 +1111,11 @@
                 <td>${position.symbol}</td>
                 <td>${position.qty}</td>
                 <td>${money(position.market_value)}</td>
-                <td>${money(position.unrealized_pl)}</td>
+                <td class="${pnlClass(position.unrealized_pl)}">${money(position.unrealized_pl)}</td>
+                <td class="${pnlClass(position.unrealized_plpc)}">${signedPct(position.unrealized_plpc)}</td>
               </tr>`,
             )
-            .join("") || '<tr><td colspan="4" class="muted">Keine Positionen.</td></tr>';
+            .join("") || '<tr><td colspan="5" class="muted">Keine Positionen.</td></tr>';
       }
 
       function renderActiveTrades(active) {
@@ -1097,9 +1157,7 @@
         }
         const cardHtml = cards
           .map((trade) => `<div class="trade-card">
-            <div class="trade-card-header"><strong>${trade.symbol}</strong>${badge(trade.kind, trade.kind.includes("Alpaca") ? "ok" : "warn")}</div>
-            <div class="status-row"><div class="label">Seite</div><div class="value">${trade.side}</div></div>
-            <div class="status-row"><div class="label">Menge</div><div class="value">${trade.qty}</div></div>
+            <div class="trade-card-header"><strong>${trade.symbol} · ${trade.side} · ${trade.qty}</strong>${badge(trade.kind, trade.kind.includes("Alpaca") ? "ok" : "warn")}</div>
             <div class="status-row"><div class="label">Status</div><div class="value">${trade.status}</div></div>
             <div class="status-row"><div class="label">Zeit</div><div class="value">${dateTime(trade.time)}</div></div>
           </div>`)
@@ -1227,6 +1285,20 @@
         ]);
       }
 
+      async function refreshLivePortfolio() {
+        const [status, activeTrades] = await Promise.all([
+          api("/api/portfolio/status"),
+          api("/api/trades/active"),
+        ]);
+        renderBalanceMetrics(status);
+        renderPositions(status.positions);
+        renderActiveTrades(activeTrades);
+        const liveStatus = document.querySelector("#portfolio-live-status");
+        if (liveStatus) {
+          liveStatus.textContent = `Live aktualisiert: ${dateTime(new Date().toISOString())} · automatisch alle 15 Sekunden`;
+        }
+      }
+
       async function refresh() {
         const [auth, config, status, activeTrades, control, strategy, orders, audit, alerts, backtests, simulations, report] = await Promise.all([
           api("/api/auth/me"),
@@ -1261,6 +1333,10 @@
         renderBalanceMetrics(status);
         renderPositions(status.positions);
         renderActiveTrades(activeTrades);
+        const liveStatus = document.querySelector("#portfolio-live-status");
+        if (liveStatus) {
+          liveStatus.textContent = `Live aktualisiert: ${dateTime(new Date().toISOString())} · automatisch alle 15 Sekunden`;
+        }
         renderTradingControl(control);
         renderOrders(orders);
         renderAudit(audit);
@@ -1441,6 +1517,12 @@
           setProcessStatus(`Laden fehlgeschlagen: ${error.message}`, "error");
           document.querySelector("#config").innerHTML = `<div class="empty-state danger">${error.message}</div>`;
         });
+      setInterval(() => {
+        refreshLivePortfolio().catch((error) => {
+          const liveStatus = document.querySelector("#portfolio-live-status");
+          if (liveStatus) liveStatus.textContent = `Live-Aktualisierung fehlgeschlagen: ${error.message}`;
+        });
+      }, 15000);
     </script>
   </body>
 </html>
