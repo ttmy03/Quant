@@ -150,7 +150,7 @@
         gap: 10px;
       }
       .toolbar {
-        grid-template-columns: repeat(4, max-content);
+        grid-template-columns: repeat(5, max-content);
         margin-bottom: 12px;
       }
       .form-grid {
@@ -246,6 +246,11 @@
           <button id="refresh">Aktualisieren</button>
           <button class="secondary" id="run-sim">Monte Carlo</button>
           <button class="secondary" id="run-improve">Verbessern</button>
+          <select id="backtest-data-source" aria-label="Backtest Datenquelle">
+            <option value="auto">Daten: Auto</option>
+            <option value="alpaca">Daten: Alpaca</option>
+            <option value="synthetic">Daten: Synthetic</option>
+          </select>
           <button class="secondary" id="run-backtest">Backtest</button>
         </div>
         <div class="metric-grid" id="metrics"></div>
@@ -557,6 +562,7 @@
         }
 
         const metrics = backtest.metrics || {};
+        const inputs = backtest.inputs || {};
         const trades = backtest.trades || [];
         const curve = backtest.equity_curve || [];
         const lastPoint = curve[curve.length - 1] || {};
@@ -564,6 +570,8 @@
           ["Final Equity", money(metrics.final_equity)],
           ["Return", pct(metrics.total_return)],
           ["Max Drawdown", pct(metrics.max_drawdown)],
+          ["Datenquelle", inputs.resolved_data_source || inputs.data_source || "-"],
+          ["Bars", inputs.bars_count ?? curve.length],
           ["Trades", metrics.trades_count ?? 0],
         ]
           .map(([label, value]) => `<div class="metric"><span class="muted">${label}</span><strong>${value}</strong></div>`)
@@ -593,6 +601,10 @@
           symbol: backtest.symbol,
           buy_and_hold_return: pct(metrics.buy_and_hold_return),
           exposure: pct(metrics.exposure_pct),
+          data_source_requested: inputs.data_source,
+          data_source_used: inputs.resolved_data_source,
+          fallback_reason: inputs.fallback_reason,
+          bars_count: inputs.bars_count,
           last_equity_point: lastPoint,
         });
       }
@@ -636,11 +648,12 @@
         await refresh();
       });
       document.querySelector("#run-backtest").addEventListener("click", async () => {
+        const dataSource = document.querySelector("#backtest-data-source").value;
         const result = await api("/api/backtests/run", {
           method: "POST",
-          body: json({ symbol: "AAPL", days: 252, seed: 42, initial_cash: 10000, trade_notional: 1000 }),
+          body: json({ symbol: "AAPL", days: 252, seed: 42, initial_cash: 10000, trade_notional: 1000, data_source: dataSource }),
         });
-        renderBacktest(result.result);
+        renderBacktest(result.backtest);
         await refresh();
       });
       document.querySelector("#order-form").addEventListener("submit", async (event) => {

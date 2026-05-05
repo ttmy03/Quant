@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Iterable
 from uuid import uuid4
 
@@ -67,18 +67,42 @@ class AlpacaClient:
         )
         bars: list[Bar] = []
         for symbol, raw_bar in (payload.get("bars") or {}).items():
-            bars.append(
-                Bar(
-                    symbol=symbol,
-                    timestamp=datetime.fromisoformat(raw_bar["t"].replace("Z", "+00:00")),
-                    open=float(raw_bar["o"]),
-                    high=float(raw_bar["h"]),
-                    low=float(raw_bar["l"]),
-                    close=float(raw_bar["c"]),
-                    volume=float(raw_bar.get("v", 0.0)),
-                )
-            )
+            bars.append(self._parse_bar(symbol, raw_bar))
         return bars
+
+    def historical_bars(self, symbol: str, *, days: int, timeframe: str = "1Day") -> list[Bar]:
+        symbol = symbol.upper()
+        if not self.settings.alpaca_configured:
+            return []
+
+        end = datetime.now(UTC)
+        # Ask for extra calendar days so weekends/holidays still leave enough daily bars.
+        start = end - timedelta(days=max(days * 3, days + 10))
+        payload = self._request(
+            "GET",
+            f"{self.settings.alpaca_data_url}/v2/stocks/{symbol}/bars",
+            params={
+                "timeframe": timeframe,
+                "start": start.isoformat().replace("+00:00", "Z"),
+                "end": end.isoformat().replace("+00:00", "Z"),
+                "limit": str(days),
+                "adjustment": "raw",
+                "feed": "iex",
+            },
+        )
+        return [self._parse_bar(symbol, raw_bar) for raw_bar in payload.get("bars", [])][-days:]
+
+    @staticmethod
+    def _parse_bar(symbol: str, raw_bar: dict[str, Any]) -> Bar:
+        return Bar(
+            symbol=symbol,
+            timestamp=datetime.fromisoformat(raw_bar["t"].replace("Z", "+00:00")),
+            open=float(raw_bar["o"]),
+            high=float(raw_bar["h"]),
+            low=float(raw_bar["l"]),
+            close=float(raw_bar["c"]),
+            volume=float(raw_bar.get("v", 0.0)),
+        )
 
     def place_order(self, intent: OrderIntent, risk_decision: RiskDecision) -> OrderSubmission:
         if not risk_decision.allowed:

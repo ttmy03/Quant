@@ -163,6 +163,33 @@ def test_backtest_endpoint_runs_and_persists_when_auth_disabled(tmp_path) -> Non
     assert "id" in payload["backtest"]
     assert latest_response.status_code == 200
     assert latest_response.json()[0]["symbol"] == "AAPL"
+    assert payload["data_source"] == "synthetic"
+    assert payload["bars_count"] == 80
+
+
+def test_backtest_endpoint_reports_alpaca_fallback_when_requested_without_credentials(tmp_path) -> None:
+    settings = Settings(
+        DATABASE_PATH=tmp_path / "test.sqlite3",
+        DEFAULT_SYMBOLS="AAPL",
+        AUTH_ENABLED=False,
+        ALPACA_API_KEY="",
+        ALPACA_SECRET_KEY="",
+        _env_file=None,
+    )
+    app = create_app(settings=settings, storage=Storage(settings.database_path))
+
+    with ASGITestClient(app) as client:
+        response = client.post(
+            "/api/backtests/run",
+            json={"symbol": "AAPL", "days": 60, "seed": 42, "data_source": "alpaca"},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data_source"] == "synthetic_fallback"
+    assert payload["fallback_reason"] == "Alpaca historical data unavailable; synthetic fallback was used."
+    assert payload["backtest"]["inputs"]["data_source"] == "alpaca"
+    assert payload["backtest"]["inputs"]["resolved_data_source"] == "synthetic_fallback"
 
 
 def test_monte_carlo_endpoint_returns_visualization_series(tmp_path) -> None:

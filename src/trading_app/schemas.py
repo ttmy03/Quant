@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 OrderSide = Literal["buy", "sell"]
 OrderType = Literal["market", "limit"]
 SignalAction = Literal["BUY", "SELL", "HOLD"]
+BacktestDataSource = Literal["auto", "alpaca", "synthetic"]
 
 
 class Bar(BaseModel):
@@ -131,6 +132,7 @@ class BacktestRequest(BaseModel):
     seed: int = 42
     initial_cash: float = Field(default=10_000.0, gt=0)
     trade_notional: float = Field(default=1_000.0, gt=0)
+    data_source: BacktestDataSource = "auto"
     strategy: StrategyParamsModel | None = None
 
     @field_validator("symbol")

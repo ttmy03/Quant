@@ -333,7 +333,28 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
             if request.strategy is not None
             else app.state.strategy_params
         )
-        bars = generate_synthetic_bars(symbol=request.symbol, days=request.days, seed=request.seed)
+        fallback_reason = None
+        data_source = "synthetic"
+        if request.data_source in {"auto", "alpaca"}:
+            try:
+                alpaca_bars = AlpacaClient(settings).historical_bars(request.symbol, days=request.days)
+            except Exception as exc:  # noqa: BLE001 - external market-data failure should not break research mode
+                alpaca_bars = []
+                fallback_reason = f"Alpaca historical data unavailable: {exc}"
+            if alpaca_bars:
+                bars = alpaca_bars
+                data_source = "alpaca"
+            else:
+                bars = generate_synthetic_bars(symbol=request.symbol, days=request.days, seed=request.seed)
+                data_source = "synthetic_fallback" if request.data_source == "alpaca" else "synthetic"
+                fallback_reason = fallback_reason or "Alpaca historical data unavailable; synthetic fallback was used."
+        else:
+            bars = generate_synthetic_bars(symbol=request.symbol, days=request.days, seed=request.seed)
+
+        inputs = request.model_dump(mode="json")
+        inputs["resolved_data_source"] = data_source
+        inputs["fallback_reason"] = fallback_reason
+        inputs["bars_count"] = len(bars)
         result = run_backtest(
             bars,
             params,
@@ -344,7 +365,7 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
         record = storage.record_backtest(
             result.strategy_name,
             result.symbol,
-            request.model_dump(mode="json"),
+            inputs,
             result.metrics.model_dump(mode="json"),
             [trade.model_dump(mode="json") for trade in result.trades],
             [point.model_dump(mode="json") for point in result.equity_curve],
@@ -352,10 +373,16 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
         storage.record_audit(
             "backtest_completed",
             "Backtest completed.",
-            {"backtest_id": record["id"], "metrics": result.metrics.model_dump(mode="json")},
+            {"backtest_id": record["id"], "metrics": result.metrics.model_dump(mode="json"), "data_source": data_source},
             actor="codex",
         )
-        return {"backtest": record, "result": result_payload}
+        return {
+            "backtest": record,
+            "result": result_payload,
+            "data_source": data_source,
+            "fallback_reason": fallback_reason,
+            "bars_count": len(bars),
+        }
 
     @app.get("/api/backtests/latest")
     def latest_backtests(limit: Annotated[int, Query(ge=1, le=100)] = 5) -> list[dict[str, object]]:
