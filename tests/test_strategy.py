@@ -33,3 +33,22 @@ def test_strategy_holds_without_enough_data() -> None:
     signal = strategy.generate_signal("AAPL", bars_from_prices([10, 11, 12]))
 
     assert signal.action == "HOLD"
+
+
+def test_strategy_avoids_buying_overextended_drawdowns() -> None:
+    strategy = MovingAverageCrossoverStrategy(
+        StrategyParams(
+            short_window=2,
+            long_window=4,
+            min_crossover_pct=0.001,
+            momentum_window=3,
+            volatility_window=3,
+            min_momentum_pct=0.0,
+            max_drawdown_from_peak_pct=0.10,
+        )
+    )
+
+    signal = strategy.generate_signal("AAPL", bars_from_prices([10, 15, 14, 13, 12]))
+
+    assert signal.action == "SELL"
+    assert "drawdown" in signal.reason.lower()

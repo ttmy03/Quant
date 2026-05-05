@@ -73,6 +73,30 @@ def test_portfolio_backtest_runs_all_tickers_and_records_all_trades() -> None:
     assert result.equity_curve[-1].equity > 0
 
 
+def test_portfolio_backtest_limits_positions_to_highest_confidence_signals() -> None:
+    result = run_portfolio_backtest(
+        {
+            "SLOW": bars_from_prices([10, 10, 10, 10, 10.5, 11, 11.2, 11.4], "SLOW"),
+            "FAST": bars_from_prices([10, 10, 10, 10, 12, 14, 16, 18], "FAST"),
+            "MID": bars_from_prices([10, 10, 10, 10, 11, 12, 13, 14], "MID"),
+        },
+        StrategyParams(
+            short_window=2,
+            long_window=4,
+            min_crossover_pct=0.001,
+            momentum_window=3,
+            max_positions=2,
+        ),
+        initial_cash=10_000,
+        trade_notional=1_000,
+    )
+
+    bought_symbols = [trade.symbol for trade in result.trades if trade.side == "buy"]
+    assert len(set(bought_symbols)) == 2
+    assert "FAST" in bought_symbols
+    assert max(point.position_qty for point in result.equity_curve) <= 2
+
+
 def test_storage_roundtrips_backtest_result(tmp_path) -> None:
     storage = Storage(tmp_path / "test.sqlite3")
     result = run_backtest(

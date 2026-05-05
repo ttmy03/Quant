@@ -1484,13 +1484,18 @@
         ]);
         renderStatusList("#strategy", [
           ["Name", strategy.name],
+          ["Beschreibung", strategy.description || "Risk-adjusted Momentum Rotation"],
           ["Scope", strategy.strategy_scope === "multi_symbol_watchlist" ? "ganze Watchlist" : "einzeln"],
           ["BUY", strategy.action_counts?.BUY ?? 0],
           ["SELL", strategy.action_counts?.SELL ?? 0],
           ["HOLD", strategy.action_counts?.HOLD ?? 0],
-          ["Short Window", strategy.params?.short_window],
-          ["Long Window", strategy.params?.long_window],
-          ["Min Crossover", pct(strategy.params?.min_crossover_pct)],
+          ["Short / Long", `${strategy.params?.short_window} / ${strategy.params?.long_window}`],
+          ["Momentum Window", strategy.params?.momentum_window],
+          ["Max Positionen", strategy.params?.max_positions],
+          ["Stop Loss", pct(strategy.params?.stop_loss_pct)],
+          ["Trailing Stop", pct(strategy.params?.trailing_stop_pct)],
+          ["Max Drawdown je Ticker", pct(strategy.params?.max_drawdown_from_peak_pct)],
+          ["Max Volatilität", pct(strategy.params?.max_volatility_pct)],
           ["Top Signale", (strategy.latest_demo_signals || []).slice(0, 5).map((signal) => `${signal.symbol}: ${signal.action}`).join(", ") || "-"],
         ]);
         renderBalanceMetrics(status);

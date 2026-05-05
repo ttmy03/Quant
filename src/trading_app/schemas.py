@@ -102,9 +102,19 @@ class SchedulerRunRequest(BaseModel):
 
 
 class StrategyParamsModel(BaseModel):
-    short_window: int = Field(default=5, ge=2, le=250)
-    long_window: int = Field(default=20, ge=3, le=500)
-    min_crossover_pct: float = Field(default=0.001, ge=0.0, le=0.2)
+    short_window: int = Field(default=8, ge=2, le=250)
+    long_window: int = Field(default=30, ge=3, le=500)
+    min_crossover_pct: float = Field(default=0.002, ge=0.0, le=0.2)
+    momentum_window: int = Field(default=30, ge=2, le=250)
+    volatility_window: int = Field(default=20, ge=2, le=250)
+    min_momentum_pct: float = Field(default=0.01, ge=-0.2, le=0.2)
+    max_volatility_pct: float = Field(default=0.045, ge=0.001, le=0.5)
+    max_drawdown_from_peak_pct: float = Field(default=0.18, ge=0.01, le=0.8)
+    min_buy_score: float = Field(default=0.75, ge=0.0, le=10.0)
+    sell_score: float = Field(default=-0.35, ge=-10.0, le=10.0)
+    max_positions: int = Field(default=5, ge=1, le=20)
+    stop_loss_pct: float = Field(default=0.08, ge=0.01, le=0.8)
+    trailing_stop_pct: float = Field(default=0.12, ge=0.01, le=0.8)
 
     @model_validator(mode="after")
     def short_must_be_less_than_long(self) -> "StrategyParamsModel":

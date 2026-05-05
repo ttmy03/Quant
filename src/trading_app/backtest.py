@@ -141,9 +141,10 @@ def run_portfolio_backtest(
 ) -> BacktestResult:
     """Run a multi-symbol portfolio backtest that mirrors the scheduler/live loop.
 
-    Every date, every symbol is evaluated by the same strategy. Multiple BUY/SELL
-    decisions can be executed on the same backtest day, constrained only by cash
-    and existing positions.
+    The portfolio version now uses risk-aware execution on top of strategy signals:
+    SELL/risk-exit decisions are processed first, BUY candidates are ranked by
+    confidence, and max_positions prevents the engine from buying every weak
+    crossover just because cash is available.
     """
 
     strategy = MovingAverageCrossoverStrategy(params)
@@ -165,11 +166,40 @@ def run_portfolio_backtest(
     cash = float(initial_cash)
     positions: dict[str, float] = {symbol: 0.0 for symbol in ordered}
     entry_notional: dict[str, float] = {symbol: 0.0 for symbol in ordered}
+    entry_price: dict[str, float] = {symbol: 0.0 for symbol in ordered}
+    peak_price_since_entry: dict[str, float] = {symbol: 0.0 for symbol in ordered}
     winning_round_trips = 0
     closed_round_trips = 0
     trades: list[BacktestTrade] = []
     equity_curve: list[BacktestEquityPoint] = []
     last_signal = Signal(symbol="WATCHLIST_PORTFOLIO", action="HOLD", confidence=0.0, reason="portfolio backtest initialized")
+
+    def close_position(symbol: str, bar: Bar, reason: str) -> None:
+        nonlocal cash, winning_round_trips, closed_round_trips
+        qty = positions.get(symbol, 0.0)
+        price = float(bar.close)
+        if qty <= 0 or price <= 0:
+            return
+        notional = qty * price
+        cash += notional
+        positions[symbol] = 0.0
+        closed_round_trips += 1
+        if notional > entry_notional.get(symbol, 0.0):
+            winning_round_trips += 1
+        entry_notional[symbol] = 0.0
+        entry_price[symbol] = 0.0
+        peak_price_since_entry[symbol] = 0.0
+        trades.append(
+            BacktestTrade(
+                timestamp=bar.timestamp,
+                symbol=symbol,
+                side="sell",
+                qty=round(qty, 8),
+                price=round(price, 4),
+                notional=round(notional, 4),
+                reason=reason,
+            )
+        )
 
     for day in sorted(bars_by_date):
         day_bars = bars_by_date[day]
@@ -178,6 +208,10 @@ def run_portfolio_backtest(
             if bar is not None:
                 history_by_symbol[symbol].append(bar)
                 latest_price[symbol] = float(bar.close)
+                if positions.get(symbol, 0.0) > 0:
+                    peak_price_since_entry[symbol] = max(peak_price_since_entry.get(symbol, 0.0), float(bar.close))
+
+        buy_candidates: list[tuple[float, str, Bar, Signal]] = []
 
         for symbol in sorted(ordered):
             history = history_by_symbol[symbol]
@@ -185,48 +219,63 @@ def run_portfolio_backtest(
                 continue
             bar = history[-1]
             price = float(bar.close)
+            if price <= 0:
+                continue
+
             signal = strategy.generate_signal(symbol, history)
             last_signal = signal
+            held_qty = positions.get(symbol, 0.0)
 
-            if price > 0 and signal.action == "BUY" and positions.get(symbol, 0.0) <= 0 and cash > 0:
-                notional = min(float(trade_notional), cash)
-                if notional <= 0:
+            if held_qty > 0:
+                entry = max(entry_price.get(symbol, price), 1e-9)
+                peak = max(peak_price_since_entry.get(symbol, price), price)
+                loss_from_entry = (price / entry) - 1
+                trailing_drawdown = (price / peak) - 1
+                if loss_from_entry <= -params.stop_loss_pct:
+                    close_position(
+                        symbol,
+                        bar,
+                        f"portfolio risk exit: stop loss hit ({loss_from_entry:.2%}); {signal.reason}",
+                    )
                     continue
-                qty = notional / price
-                cash -= notional
-                positions[symbol] = qty
-                entry_notional[symbol] = notional
-                trades.append(
-                    BacktestTrade(
-                        timestamp=bar.timestamp,
-                        symbol=symbol,
-                        side="buy",
-                        qty=round(qty, 8),
-                        price=round(price, 4),
-                        notional=round(notional, 4),
-                        reason=signal.reason,
+                if trailing_drawdown <= -params.trailing_stop_pct:
+                    close_position(
+                        symbol,
+                        bar,
+                        f"portfolio risk exit: trailing stop hit ({trailing_drawdown:.2%}); {signal.reason}",
                     )
+                    continue
+                if signal.action == "SELL":
+                    close_position(symbol, bar, signal.reason)
+                    continue
+
+            if signal.action == "BUY" and held_qty <= 0:
+                buy_candidates.append((signal.confidence, symbol, bar, signal))
+
+        open_positions = sum(1 for qty in positions.values() if qty > 0)
+        available_slots = max(0, int(params.max_positions) - open_positions)
+        for _, symbol, bar, signal in sorted(buy_candidates, key=lambda item: (-item[0], item[1]))[:available_slots]:
+            price = float(bar.close)
+            notional = min(float(trade_notional), cash)
+            if price <= 0 or notional <= 0:
+                continue
+            qty = notional / price
+            cash -= notional
+            positions[symbol] = qty
+            entry_notional[symbol] = notional
+            entry_price[symbol] = price
+            peak_price_since_entry[symbol] = price
+            trades.append(
+                BacktestTrade(
+                    timestamp=bar.timestamp,
+                    symbol=symbol,
+                    side="buy",
+                    qty=round(qty, 8),
+                    price=round(price, 4),
+                    notional=round(notional, 4),
+                    reason=f"ranked buy candidate confidence={signal.confidence:.2f}; {signal.reason}",
                 )
-            elif price > 0 and signal.action == "SELL" and positions.get(symbol, 0.0) > 0:
-                qty = positions[symbol]
-                notional = qty * price
-                cash += notional
-                positions[symbol] = 0.0
-                closed_round_trips += 1
-                if notional > entry_notional.get(symbol, 0.0):
-                    winning_round_trips += 1
-                entry_notional[symbol] = 0.0
-                trades.append(
-                    BacktestTrade(
-                        timestamp=bar.timestamp,
-                        symbol=symbol,
-                        side="sell",
-                        qty=round(qty, 8),
-                        price=round(price, 4),
-                        notional=round(notional, 4),
-                        reason=signal.reason,
-                    )
-                )
+            )
 
         positions_value = sum(positions[symbol] * latest_price.get(symbol, 0.0) for symbol in positions)
         equity = cash + positions_value
