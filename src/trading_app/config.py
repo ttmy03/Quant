@@ -30,6 +30,20 @@ class Settings(BaseSettings):
     dry_run: bool = Field(default=True, validation_alias="DRY_RUN")
     paper_trading_only: bool = Field(default=True, validation_alias="PAPER_TRADING_ONLY")
 
+    auth_enabled: bool = Field(default=True, validation_alias="AUTH_ENABLED")
+    admin_username: str = Field(default="admin", validation_alias="ADMIN_USERNAME")
+    admin_password_hash: str | None = Field(default=None, validation_alias="ADMIN_PASSWORD_HASH")
+    admin_password: str | None = Field(default=None, validation_alias="ADMIN_PASSWORD")
+    session_secret: str | None = Field(default=None, validation_alias="SESSION_SECRET")
+    session_cookie_name: str = Field(
+        default="paper_quant_session",
+        validation_alias="SESSION_COOKIE_NAME",
+    )
+    session_max_age_seconds: int = Field(
+        default=86400,
+        validation_alias="SESSION_MAX_AGE_SECONDS",
+    )
+
     database_path: Path = Field(
         default=Path("data/paper_quant.sqlite3"),
         validation_alias="DATABASE_PATH",
@@ -76,10 +90,36 @@ class Settings(BaseSettings):
     def is_paper_endpoint(self) -> bool:
         return "paper" in self.alpaca_base_url.lower()
 
+    @property
+    def is_production(self) -> bool:
+        return self.environment.lower() in {"production", "prod"}
+
+    @property
+    def effective_session_secret(self) -> str:
+        if self.session_secret:
+            return self.session_secret
+        return "development-only-paper-quant-session-secret"
+
+    @property
+    def auth_credentials_configured(self) -> bool:
+        return bool(self.admin_password_hash or self.admin_password)
+
+    def validate_auth_configuration(self) -> None:
+        if not self.auth_enabled:
+            return
+        if self.is_production and not self.session_secret:
+            raise RuntimeError("SESSION_SECRET is required when AUTH_ENABLED=true in production.")
+        if self.is_production and not self.auth_credentials_configured:
+            raise RuntimeError("ADMIN_PASSWORD_HASH or ADMIN_PASSWORD is required when AUTH_ENABLED=true in production.")
+
     def public_dict(self) -> dict[str, Any]:
         return {
             "app_name": self.app_name,
             "environment": self.environment,
+            "auth_enabled": self.auth_enabled,
+            "auth_credentials_configured": self.auth_credentials_configured,
+            "session_cookie_name": self.session_cookie_name,
+            "session_max_age_seconds": self.session_max_age_seconds,
             "alpaca_configured": self.alpaca_configured,
             "alpaca_base_url": self.alpaca_base_url,
             "dry_run": self.dry_run,

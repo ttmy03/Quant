@@ -8,6 +8,7 @@ def test_risk_guard_rejects_non_paper_endpoint_when_paper_only() -> None:
         ALPACA_BASE_URL="https://api.alpaca.markets",
         PAPER_TRADING_ONLY=True,
         DEFAULT_SYMBOLS="AAPL",
+        _env_file=None,
     )
     decision = RiskGuard(settings).evaluate_order(
         OrderIntent(symbol="AAPL", side="buy", qty=1),
@@ -19,7 +20,7 @@ def test_risk_guard_rejects_non_paper_endpoint_when_paper_only() -> None:
 
 
 def test_risk_guard_rejects_oversized_order() -> None:
-    settings = Settings(MAX_ORDER_NOTIONAL=50, DEFAULT_SYMBOLS="AAPL")
+    settings = Settings(MAX_ORDER_NOTIONAL=50, DEFAULT_SYMBOLS="AAPL", _env_file=None)
     decision = RiskGuard(settings).evaluate_order(
         OrderIntent(symbol="AAPL", side="buy", qty=1),
         estimated_price=100,
@@ -30,7 +31,7 @@ def test_risk_guard_rejects_oversized_order() -> None:
 
 
 def test_risk_guard_allows_small_paper_order() -> None:
-    settings = Settings(DEFAULT_SYMBOLS="AAPL", MAX_ORDER_NOTIONAL=1000)
+    settings = Settings(DEFAULT_SYMBOLS="AAPL", MAX_ORDER_NOTIONAL=1000, _env_file=None)
     decision = RiskGuard(settings).evaluate_order(
         OrderIntent(symbol="AAPL", side="buy", qty=1),
         estimated_price=100,
