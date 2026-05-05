@@ -13,12 +13,14 @@ from fastapi.staticfiles import StaticFiles
 
 from trading_app.alpaca import AlpacaClient
 from trading_app.auth import AuthService, auth_state
+from trading_app.backtest import run_backtest
 from trading_app.config import Settings, get_settings
 from trading_app.data import generate_synthetic_bars, returns_from_bars
 from trading_app.improver import RecursiveImprover
 from trading_app.monte_carlo import simulate_portfolio_paths
 from trading_app.risk import RiskGuard
 from trading_app.schemas import (
+    BacktestRequest,
     ImprovementRequest,
     MonteCarloRequest,
     OrderIntent,
@@ -323,6 +325,41 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
     @app.get("/api/simulations/latest")
     def latest_simulations(limit: Annotated[int, Query(ge=1, le=100)] = 5) -> list[dict[str, object]]:
         return storage.list_simulations(limit=limit)
+
+    @app.post("/api/backtests/run")
+    def run_backtest_endpoint(request: BacktestRequest) -> dict[str, object]:
+        params = (
+            StrategyParams(**request.strategy.model_dump())
+            if request.strategy is not None
+            else app.state.strategy_params
+        )
+        bars = generate_synthetic_bars(symbol=request.symbol, days=request.days, seed=request.seed)
+        result = run_backtest(
+            bars,
+            params,
+            initial_cash=request.initial_cash,
+            trade_notional=request.trade_notional,
+        )
+        result_payload = result.model_dump(mode="json")
+        record = storage.record_backtest(
+            result.strategy_name,
+            result.symbol,
+            request.model_dump(mode="json"),
+            result.metrics.model_dump(mode="json"),
+            [trade.model_dump(mode="json") for trade in result.trades],
+            [point.model_dump(mode="json") for point in result.equity_curve],
+        )
+        storage.record_audit(
+            "backtest_completed",
+            "Backtest completed.",
+            {"backtest_id": record["id"], "metrics": result.metrics.model_dump(mode="json")},
+            actor="codex",
+        )
+        return {"backtest": record, "result": result_payload}
+
+    @app.get("/api/backtests/latest")
+    def latest_backtests(limit: Annotated[int, Query(ge=1, le=100)] = 5) -> list[dict[str, object]]:
+        return storage.list_backtests(limit=limit)
 
     @app.post("/api/improvement/run")
     def run_improvement(request: ImprovementRequest) -> dict[str, object]:

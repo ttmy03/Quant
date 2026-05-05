@@ -1,8 +1,7 @@
-from fastapi.testclient import TestClient
-
 from trading_app.config import Settings
 from trading_app.main import create_app
 from trading_app.storage import Storage
+from tests.asgi_client import ASGITestClient
 
 
 def test_health_endpoint(tmp_path) -> None:
@@ -15,7 +14,7 @@ def test_health_endpoint(tmp_path) -> None:
     )
     app = create_app(settings=settings, storage=Storage(settings.database_path))
 
-    with TestClient(app) as client:
+    with ASGITestClient(app) as client:
         response = client.get("/health")
 
     assert response.status_code == 200
@@ -33,7 +32,7 @@ def test_dashboard_redirects_to_login_when_auth_enabled(tmp_path) -> None:
     )
     app = create_app(settings=settings, storage=Storage(settings.database_path))
 
-    with TestClient(app) as client:
+    with ASGITestClient(app) as client:
         response = client.get("/", follow_redirects=False)
 
     assert response.status_code == 303
@@ -50,7 +49,7 @@ def test_login_allows_dashboard_and_api_access(tmp_path) -> None:
     )
     app = create_app(settings=settings, storage=Storage(settings.database_path))
 
-    with TestClient(app) as client:
+    with ASGITestClient(app) as client:
         login_response = client.post(
             "/login",
             data={"username": "admin", "password": "test-password"},
@@ -85,7 +84,7 @@ def test_bad_login_is_rejected(tmp_path) -> None:
     )
     app = create_app(settings=settings, storage=Storage(settings.database_path))
 
-    with TestClient(app) as client:
+    with ASGITestClient(app) as client:
         login_response = client.post(
             "/login",
             data={"username": "admin", "password": "wrong-password"},
@@ -101,7 +100,7 @@ def test_auth_can_be_disabled_for_dev_and_tests(tmp_path) -> None:
     settings = Settings(DATABASE_PATH=tmp_path / "test.sqlite3", AUTH_ENABLED=False, _env_file=None)
     app = create_app(settings=settings, storage=Storage(settings.database_path))
 
-    with TestClient(app) as client:
+    with ASGITestClient(app) as client:
         dashboard_response = client.get("/")
         config_response = client.get("/api/config")
         me_response = client.get("/api/auth/me")
@@ -125,10 +124,42 @@ def test_order_endpoint_records_dry_run_order(tmp_path) -> None:
     )
     app = create_app(settings=settings, storage=Storage(settings.database_path))
 
-    with TestClient(app) as client:
+    with ASGITestClient(app) as client:
         response = client.post("/api/orders", json={"symbol": "AAPL", "side": "buy", "qty": 1})
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["submission"]["status"] == "dry_run_accepted"
     assert payload["order"]["dry_run"] is True
+
+
+def test_backtest_endpoint_runs_and_persists_when_auth_disabled(tmp_path) -> None:
+    settings = Settings(
+        DATABASE_PATH=tmp_path / "test.sqlite3",
+        DEFAULT_SYMBOLS="AAPL",
+        AUTH_ENABLED=False,
+        _env_file=None,
+    )
+    app = create_app(settings=settings, storage=Storage(settings.database_path))
+
+    with ASGITestClient(app) as client:
+        response = client.post(
+            "/api/backtests/run",
+            json={
+                "symbol": "AAPL",
+                "days": 80,
+                "seed": 42,
+                "initial_cash": 10_000,
+                "trade_notional": 1_000,
+                "strategy": {"short_window": 3, "long_window": 8, "min_crossover_pct": 0.0},
+            },
+        )
+        latest_response = client.get("/api/backtests/latest")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["result"]["symbol"] == "AAPL"
+    assert payload["result"]["metrics"]["final_equity"] > 0
+    assert "id" in payload["backtest"]
+    assert latest_response.status_code == 200
+    assert latest_response.json()[0]["symbol"] == "AAPL"

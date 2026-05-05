@@ -1,6 +1,6 @@
 # Paper Quant
 
-Automatisierte Aktientrading-App als sicherer MVP-Scaffold fuer Research und Paper Trading. Das Projekt enthaelt FastAPI, ein minimales Dashboard, Alpaca-Paper-Grenzen, SQLite-Audit-Logs, eine Moving-Average-Strategie, Monte-Carlo-Simulation und eine rekursive Verbesserungslogik.
+Automatisierte Aktientrading-App als sicherer MVP-Scaffold fuer Research und Paper Trading. Das Projekt enthaelt FastAPI, ein minimales Dashboard, Alpaca-Paper-Grenzen, SQLite-Audit-Logs, eine Moving-Average-Strategie, Backtesting, Monte-Carlo-Simulation und eine rekursive Verbesserungslogik.
 
 Keine Finanzberatung. Dieses Repository ist nicht fuer Live-Geld-Trading vorkonfiguriert.
 
@@ -10,7 +10,7 @@ Keine Finanzberatung. Dieses Repository ist nicht fuer Live-Geld-Trading vorkonf
 - `PAPER_TRADING_ONLY=true` ist der Default: Nicht-Paper-Endpunkte werden blockiert.
 - API-Keys gehoeren nur in lokale Umgebungsvariablen oder `.env`, nie in Git.
 - `AUTH_ENABLED=true` schuetzt Dashboard und API per signiertem Session-Cookie.
-- Jede Order, Simulation und Strategieaenderung wird als Audit Event gespeichert.
+- Jede Order, Simulation, Backtest-Auswertung und Strategieaenderung wird als Audit Event gespeichert.
 - Strategieparameter werden nur verbessert, wenn Risikolimits eingehalten werden.
 
 ## Setup
@@ -100,6 +100,8 @@ docker compose up --build -d
 - `GET /api/strategy`: aktuelle Strategieparameter und Demo-Signal.
 - `PUT /api/strategy`: Strategieparameter aktualisieren.
 - `POST /api/simulations/monte-carlo`: Monte-Carlo-Simulation ausfuehren.
+- `POST /api/backtests/run`: Moving-Average-Crossover-Backtest mit synthetischen Bars ausfuehren und speichern.
+- `GET /api/backtests/latest`: letzte Backtest-Ergebnisse abrufen.
 - `POST /api/improvement/run`: Kandidatenparameter testen und ggf. uebernehmen.
 - `GET /api/audit-events`: Audit Log.
 

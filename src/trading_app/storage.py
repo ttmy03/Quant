@@ -41,6 +41,17 @@ CREATE TABLE IF NOT EXISTS simulation_results (
     inputs TEXT NOT NULL,
     metrics TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS backtest_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    name TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    inputs TEXT NOT NULL,
+    metrics TEXT NOT NULL,
+    trades TEXT NOT NULL,
+    equity_curve TEXT NOT NULL
+);
 """
 
 
@@ -49,7 +60,7 @@ def utc_now_iso() -> str:
 
 
 class Storage:
-    """Small SQLite gateway for audit, order, and simulation records."""
+    """Small SQLite gateway for audit, order, simulation, and backtest records."""
 
     def __init__(self, database_path: str | Path) -> None:
         self.database_path = Path(database_path)
@@ -213,6 +224,60 @@ class Storage:
                 (limit,),
             ).fetchall()
         return [self._decode_row(row, json_fields=("inputs", "metrics")) for row in rows]
+
+    def record_backtest(
+        self,
+        name: str,
+        symbol: str,
+        inputs: dict[str, Any],
+        metrics: dict[str, Any],
+        trades: list[dict[str, Any]],
+        equity_curve: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        created_at = utc_now_iso()
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO backtest_results (created_at, name, symbol, inputs, metrics, trades, equity_curve)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    created_at,
+                    name,
+                    symbol,
+                    json.dumps(inputs, sort_keys=True),
+                    json.dumps(metrics, sort_keys=True),
+                    json.dumps(trades, sort_keys=True),
+                    json.dumps(equity_curve, sort_keys=True),
+                ),
+            )
+            backtest_id = cursor.lastrowid
+        return {
+            "id": backtest_id,
+            "created_at": created_at,
+            "name": name,
+            "symbol": symbol,
+            "inputs": inputs,
+            "metrics": metrics,
+            "trades": trades,
+            "equity_curve": equity_curve,
+        }
+
+    def list_backtests(self, limit: int = 20) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, created_at, name, symbol, inputs, metrics, trades, equity_curve
+                FROM backtest_results
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [
+            self._decode_row(row, json_fields=("inputs", "metrics", "trades", "equity_curve"))
+            for row in rows
+        ]
 
     @staticmethod
     def _decode_row(row: sqlite3.Row, json_fields: tuple[str, ...]) -> dict[str, Any]:

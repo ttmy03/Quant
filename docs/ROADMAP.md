@@ -5,6 +5,7 @@
 - FastAPI-Dashboard, SQLite-Persistenz und Audit-Logs.
 - Alpaca-Paper-Adapter mit `DRY_RUN`-Default.
 - Moving-Average-Crossover-Strategie.
+- Synthetischer Long-only-Backtest mit Transaktionslog, Equity Curve und Basis-Metriken.
 - Monte-Carlo-Simulation mit VaR, CVaR, Drawdown und Ruin-Wahrscheinlichkeit.
 - Rekursive Parameterverbesserung mit Risikolimits.
 - CI mit Pytest.
@@ -12,7 +13,7 @@
 ## Phase 2: Research-Qualitaet
 
 - Historische Marktdaten sauber ueber Alpaca Data API laden und cachen.
-- Backtesting mit Transaktionskosten, Slippage und Positionsgroessen.
+- Backtesting gegen historische Marktdaten mit Transaktionskosten, Slippage und erweiterten Positionsgroessen.
 - Strategie-Registry fuer mehrere Strategien.
 - Walk-forward-Validierung und Out-of-sample-Auswertung.
 - Erweiterte Metriken: Sortino, Calmar, Exposure, Turnover, Hit Rate.

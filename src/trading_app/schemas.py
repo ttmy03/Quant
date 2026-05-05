@@ -110,6 +110,60 @@ class MonteCarloSummary(BaseModel):
     mean_terminal_return: float
 
 
+class BacktestRequest(BaseModel):
+    symbol: str = "AAPL"
+    days: int = Field(default=252, ge=1, le=5000)
+    seed: int = 42
+    initial_cash: float = Field(default=10_000.0, gt=0)
+    trade_notional: float = Field(default=1_000.0, gt=0)
+    strategy: StrategyParamsModel | None = None
+
+    @field_validator("symbol")
+    @classmethod
+    def uppercase_symbol(cls, value: str) -> str:
+        return value.upper()
+
+
+class BacktestTrade(BaseModel):
+    timestamp: datetime
+    symbol: str
+    side: OrderSide
+    qty: float
+    price: float
+    notional: float
+    reason: str
+
+
+class BacktestEquityPoint(BaseModel):
+    timestamp: datetime
+    equity: float
+    cash: float
+    position_qty: float
+    close: float
+
+
+class BacktestMetrics(BaseModel):
+    total_return: float
+    final_equity: float
+    max_drawdown: float
+    trades_count: int
+    win_rate: float | None = None
+    exposure_pct: float
+    buy_and_hold_return: float
+
+
+class BacktestResult(BaseModel):
+    symbol: str
+    strategy_name: str
+    params: StrategyParamsModel
+    initial_cash: float
+    trade_notional: float
+    last_signal: Signal
+    trades: list[BacktestTrade] = Field(default_factory=list)
+    equity_curve: list[BacktestEquityPoint] = Field(default_factory=list)
+    metrics: BacktestMetrics
+
+
 class ImprovementRequest(BaseModel):
     symbol: str = "AAPL"
     days: int = Field(default=180, ge=40, le=2000)

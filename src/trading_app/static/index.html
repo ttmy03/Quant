@@ -150,7 +150,7 @@
         gap: 10px;
       }
       .toolbar {
-        grid-template-columns: repeat(3, max-content);
+        grid-template-columns: repeat(4, max-content);
         margin-bottom: 12px;
       }
       .form-grid {
@@ -223,6 +223,7 @@
           <button id="refresh">Aktualisieren</button>
           <button class="secondary" id="run-sim">Monte Carlo</button>
           <button class="secondary" id="run-improve">Verbessern</button>
+          <button class="secondary" id="run-backtest">Backtest</button>
         </div>
         <div class="metric-grid" id="metrics"></div>
       </section>
@@ -261,6 +262,23 @@
       </section>
 
       <section class="span-6">
+        <h2>Backtest Zusammenfassung</h2>
+        <div class="metric-grid" id="backtest-metrics"></div>
+        <table>
+          <thead>
+            <tr>
+              <th>Zeit</th>
+              <th>Symbol</th>
+              <th>Seite</th>
+              <th>Notional</th>
+            </tr>
+          </thead>
+          <tbody id="backtest-trades"></tbody>
+        </table>
+        <pre id="backtest-equity" class="muted">Noch kein Backtest.</pre>
+      </section>
+
+      <section class="span-6">
         <h2>Audit Events</h2>
         <table>
           <thead>
@@ -294,6 +312,8 @@
 
     <script>
       const json = (value) => JSON.stringify(value, null, 2);
+      const money = (value) => (Number.isFinite(Number(value)) ? Number(value).toFixed(2) : "-");
+      const pct = (value) => (Number.isFinite(Number(value)) ? `${(Number(value) * 100).toFixed(2)}%` : "-");
 
       async function api(path, options = {}) {
         const response = await fetch(path, {
@@ -354,14 +374,56 @@
           .join("");
       }
 
+      function renderBacktest(backtest) {
+        if (!backtest) {
+          document.querySelector("#backtest-metrics").innerHTML = "";
+          document.querySelector("#backtest-trades").innerHTML = "";
+          document.querySelector("#backtest-equity").textContent = "Noch kein Backtest.";
+          return;
+        }
+
+        const metrics = backtest.metrics || {};
+        const trades = backtest.trades || [];
+        const curve = backtest.equity_curve || [];
+        const lastPoint = curve[curve.length - 1] || {};
+        document.querySelector("#backtest-metrics").innerHTML = [
+          ["Final Equity", money(metrics.final_equity)],
+          ["Return", pct(metrics.total_return)],
+          ["Max Drawdown", pct(metrics.max_drawdown)],
+          ["Trades", metrics.trades_count ?? 0],
+        ]
+          .map(([label, value]) => `<div class="metric"><span class="muted">${label}</span><strong>${value}</strong></div>`)
+          .join("");
+        document.querySelector("#backtest-trades").innerHTML =
+          trades
+            .slice(-5)
+            .reverse()
+            .map(
+              (trade) => `<tr>
+                <td>${trade.timestamp}</td>
+                <td>${trade.symbol}</td>
+                <td>${trade.side}</td>
+                <td>${money(trade.notional)}</td>
+              </tr>`,
+            )
+            .join("") || '<tr><td colspan="4" class="muted">Keine Trades.</td></tr>';
+        document.querySelector("#backtest-equity").textContent = json({
+          symbol: backtest.symbol,
+          buy_and_hold_return: pct(metrics.buy_and_hold_return),
+          exposure: pct(metrics.exposure_pct),
+          last_equity_point: lastPoint,
+        });
+      }
+
       async function refresh() {
-        const [auth, config, status, strategy, orders, audit] = await Promise.all([
+        const [auth, config, status, strategy, orders, audit, backtests] = await Promise.all([
           api("/api/auth/me"),
           api("/api/config"),
           api("/api/portfolio/status"),
           api("/api/strategy"),
           api("/api/orders"),
           api("/api/audit-events"),
+          api("/api/backtests/latest"),
         ]);
         renderAuthState(auth);
         document.querySelector("#config").textContent = json(config);
@@ -369,6 +431,7 @@
         renderMetrics(status);
         renderOrders(orders);
         renderAudit(audit);
+        renderBacktest(backtests[0]);
       }
 
       document.querySelector("#refresh").addEventListener("click", refresh);
@@ -386,6 +449,14 @@
           body: json({ symbol: "AAPL", days: 180, seed: 42 }),
         });
         document.querySelector("#strategy").textContent = json(result);
+        await refresh();
+      });
+      document.querySelector("#run-backtest").addEventListener("click", async () => {
+        const result = await api("/api/backtests/run", {
+          method: "POST",
+          body: json({ symbol: "AAPL", days: 252, seed: 42, initial_cash: 10000, trade_notional: 1000 }),
+        });
+        renderBacktest(result.result);
         await refresh();
       });
       document.querySelector("#order-form").addEventListener("submit", async (event) => {
