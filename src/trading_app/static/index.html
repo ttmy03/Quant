@@ -878,25 +878,25 @@
           <div>
             <p class="eyebrow">Schritt 4</p>
             <h2>Dry-Run Aktionen</h2>
-            <p class="section-copy">Hier kannst du einen Strategiezyklus oder eine Testorder auslösen. Beides bleibt im Dry-Run/Paper-Sicherheitsrahmen.</p>
+            <p class="section-copy">Hier kannst du einen Intraday-Long-only Strategiezyklus oder eine Testorder auslösen. Kein Hebel, keine Shorts; alles bleibt im Dry-Run/Paper-Sicherheitsrahmen.</p>
           </div>
-          <button id="run-scheduler-once" data-help="Startet genau einen Dry-Run Strategiezyklus: Signale berechnen, Risiko prüfen, mögliche Testorders protokollieren.">Scheduler einmal starten</button>
+          <button id="run-scheduler-once" data-help="Startet genau einen Intraday-Dry-Run Strategiezyklus: 5-Minuten-Signale berechnen, Risiko intelligent nach Volatilität/Confidence dosieren, mögliche Long-Cash-Testorders protokollieren.">Scheduler einmal starten</button>
         </div>
         <div class="group-grid">
           <section class="span-6">
             <h3>Scheduler Ergebnis</h3>
-            <p class="helper-text">Ein manueller Zyklus berechnet Signale und protokolliert mögliche Dry-Run Orders.</p>
+            <p class="helper-text">Ein manueller Zyklus berechnet Intraday-Signale und protokolliert mögliche Long-only Dry-Run Orders ohne Hebel.</p>
             <div id="scheduler-result" class="status-box muted">Noch kein Scheduler-Lauf.</div>
           </section>
 
           <section class="span-6">
             <h3>Manuelle Dry-Run Order</h3>
-            <p class="helper-text">Zum Testen des Order- und Risk-Flows. Keine echte Börsenorder.</p>
+            <p class="helper-text">Zum Testen des Order- und Risk-Flows. Verkäufe sind nur Positionsschließungen; keine Shorts, kein Hebel, keine echte Börsenorder.</p>
             <form class="form-grid" id="order-form">
               <input name="symbol" value="MSFT" aria-label="Symbol" />
               <select name="side" aria-label="Seite">
                 <option value="buy">Kaufen</option>
-                <option value="sell">Verkaufen</option>
+                <option value="sell">Verkaufen (nur bestehende Long-Position schließen)</option>
               </select>
               <input name="qty" type="number" min="0.001" step="0.001" value="1" aria-label="Menge" />
               <select name="order_type" aria-label="Ordertyp">
@@ -922,7 +922,7 @@
         <div class="group-grid">
           <section class="span-4">
             <h3>Strategie</h3>
-            <p class="helper-text">Aktuell genutzte Parameter und letztes Demo-Signal.</p>
+            <p class="helper-text">Intraday Long-only Strategie: adaptive Positionsgröße nach Confidence, Volatilität und Drawdown.</p>
             <div id="strategy" class="status-list">Laedt...</div>
           </section>
 
@@ -1545,7 +1545,9 @@
         ]);
         renderStatusList("#strategy", [
           ["Name", strategy.name],
-          ["Beschreibung", strategy.description || "Risk-adjusted Momentum Rotation"],
+          ["Beschreibung", strategy.description || "Intraday Long-only Adaptive Risk"],
+          ["Modus", "Intraday · nur Long · kein Hebel"],
+          ["Timeframe", strategy.params?.intraday_timeframe || "5Min"],
           ["Scope", strategy.strategy_scope === "multi_symbol_watchlist" ? "ganze Watchlist" : "einzeln"],
           ["BUY", strategy.action_counts?.BUY ?? 0],
           ["SELL", strategy.action_counts?.SELL ?? 0],
@@ -1555,9 +1557,11 @@
           ["Max Positionen", strategy.params?.max_positions],
           ["Stop Loss", pct(strategy.params?.stop_loss_pct)],
           ["Trailing Stop", pct(strategy.params?.trailing_stop_pct)],
+          ["Basis-Risiko", pct(strategy.params?.base_risk_fraction)],
+          ["Risiko-Korridor", `${pct(strategy.params?.min_risk_fraction)} - ${pct(strategy.params?.max_risk_fraction)}`],
           ["Max Drawdown je Ticker", pct(strategy.params?.max_drawdown_from_peak_pct)],
           ["Max Volatilität", pct(strategy.params?.max_volatility_pct)],
-          ["Top Signale", (strategy.latest_demo_signals || []).slice(0, 5).map((signal) => `${signal.symbol}: ${signal.action}`).join(", ") || "-"],
+          ["Top Signale", (strategy.latest_demo_signals || []).slice(0, 5).map((signal) => `${signal.symbol}: ${signal.action} · ${pct(signal.risk_fraction)} Risiko`).join(", ") || "-"],
         ]);
         renderBalanceMetrics(status);
         renderWatchlist(watchlist);

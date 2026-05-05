@@ -32,6 +32,10 @@ class Signal(BaseModel):
     action: SignalAction
     confidence: float = Field(ge=0.0, le=1.0)
     reason: str
+    strategy_mode: str = "intraday_long_only_no_leverage"
+    timeframe: str = "intraday_5min"
+    risk_fraction: float = Field(default=0.0, ge=0.0, le=1.0)
+    target_notional: float = Field(default=0.0, ge=0.0)
 
 
 class OrderIntent(BaseModel):
@@ -115,11 +119,18 @@ class StrategyParamsModel(BaseModel):
     max_positions: int = Field(default=5, ge=1, le=20)
     stop_loss_pct: float = Field(default=0.08, ge=0.01, le=0.8)
     trailing_stop_pct: float = Field(default=0.12, ge=0.01, le=0.8)
+    base_risk_fraction: float = Field(default=0.06, ge=0.001, le=0.5)
+    min_risk_fraction: float = Field(default=0.01, ge=0.001, le=0.5)
+    max_risk_fraction: float = Field(default=0.12, ge=0.001, le=0.5)
+    account_equity: float = Field(default=10_000.0, gt=0)
+    intraday_timeframe: str = "5Min"
 
     @model_validator(mode="after")
     def short_must_be_less_than_long(self) -> "StrategyParamsModel":
         if self.short_window >= self.long_window:
             raise ValueError("short_window must be less than long_window")
+        if self.min_risk_fraction > self.max_risk_fraction:
+            raise ValueError("min_risk_fraction must be <= max_risk_fraction")
         return self
 
 

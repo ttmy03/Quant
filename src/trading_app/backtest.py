@@ -25,7 +25,7 @@ def run_backtest(
 ) -> BacktestResult:
     """Run a deterministic long-only moving-average crossover backtest."""
 
-    strategy = MovingAverageCrossoverStrategy(params)
+    strategy = MovingAverageCrossoverStrategy(StrategyParams(**{**params.__dict__, "account_equity": float(initial_cash)}))
     ordered_bars = sorted(bars, key=lambda bar: bar.timestamp)
     symbol = ordered_bars[-1].symbol if ordered_bars else "UNKNOWN"
     cash = float(initial_cash)
@@ -47,7 +47,7 @@ def run_backtest(
         price = float(bar.close)
 
         if price > 0 and last_signal.action == "BUY" and position_qty <= 0 and cash > 0:
-            notional = min(float(trade_notional), cash)
+            notional = min(last_signal.target_notional if last_signal.target_notional > 0 else float(trade_notional), cash)
             qty = notional / price
             cash -= notional
             position_qty = qty
@@ -147,7 +147,7 @@ def run_portfolio_backtest(
     crossover just because cash is available.
     """
 
-    strategy = MovingAverageCrossoverStrategy(params)
+    strategy = MovingAverageCrossoverStrategy(StrategyParams(**{**params.__dict__, "account_equity": float(initial_cash)}))
     ordered: dict[str, list[Bar]] = {
         symbol.upper(): sorted(list(bars), key=lambda bar: bar.timestamp)
         for symbol, bars in bars_by_symbol.items()
@@ -256,7 +256,7 @@ def run_portfolio_backtest(
         available_slots = max(0, int(params.max_positions) - open_positions)
         for _, symbol, bar, signal in sorted(buy_candidates, key=lambda item: (-item[0], item[1]))[:available_slots]:
             price = float(bar.close)
-            notional = min(float(trade_notional), cash)
+            notional = min(signal.target_notional if signal.target_notional > 0 else float(trade_notional), cash)
             if price <= 0 or notional <= 0:
                 continue
             qty = notional / price

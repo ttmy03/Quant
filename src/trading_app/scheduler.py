@@ -65,13 +65,19 @@ class DryRunSchedulerService:
                 "watchlist": watchlist_payload,
             }
 
+        account = client.account_status()
+        available_cash = float(account.get("cash") or account.get("buying_power") or self.strategy_params.account_equity)
+        account_equity = float(account.get("equity") or account.get("portfolio_value") or self.strategy_params.account_equity)
         risk_guard = RiskGuard(effective_settings)
-        strategy = MovingAverageCrossoverStrategy(self.strategy_params)
+        strategy = MovingAverageCrossoverStrategy(
+            StrategyParams(**{**self.strategy_params.__dict__, "account_equity": max(account_equity, 1.0)})
+        )
         signal_records: list[dict[str, Any]] = []
         order_records: list[dict[str, Any]] = []
 
         for index, symbol in enumerate(symbols):
-            bars = client.historical_bars(symbol, days=request.lookback_days)
+            timeframe = getattr(getattr(strategy, "params", None), "intraday_timeframe", "5Min")
+            bars = client.historical_bars(symbol, days=request.lookback_days, timeframe=timeframe)
             source = "alpaca"
             if not bars:
                 bars = generate_synthetic_bars(
@@ -84,11 +90,14 @@ class DryRunSchedulerService:
             signal = strategy.generate_signal(symbol, bars)
             order_record: dict[str, Any] | None = None
             if signal.action in {"BUY", "SELL"}:
-                intent = OrderIntent(symbol=symbol, side=signal.action.lower(), qty=request.qty)
                 estimated_price = bars[-1].close if bars else 0.0
+                target_notional = signal.target_notional if signal.action == "BUY" and signal.target_notional > 0 else request.qty * estimated_price
+                qty = max(0.000001, target_notional / max(float(estimated_price), 1e-9))
+                intent = OrderIntent(symbol=symbol, side=signal.action.lower(), qty=qty)
                 risk_decision = risk_guard.evaluate_order(
                     intent,
                     estimated_price=estimated_price,
+                    available_cash=available_cash,
                     orders_today=len(self.storage.list_orders(limit=effective_settings.max_daily_orders)),
                 )
                 submission = client.place_order(intent, risk_decision)

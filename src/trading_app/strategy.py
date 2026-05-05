@@ -21,6 +21,11 @@ class StrategyParams:
     max_positions: int = 5
     stop_loss_pct: float = 0.08
     trailing_stop_pct: float = 0.12
+    base_risk_fraction: float = 0.06
+    min_risk_fraction: float = 0.01
+    max_risk_fraction: float = 0.12
+    account_equity: float = 10_000.0
+    intraday_timeframe: str = "5Min"
 
 
 class Strategy(Protocol):
@@ -32,19 +37,49 @@ class Strategy(Protocol):
 
 
 class MovingAverageCrossoverStrategy:
-    name = "risk_adjusted_momentum_rotation"
+    name = "intraday_long_only_adaptive_risk"
 
     def __init__(self, params: StrategyParams | None = None) -> None:
         self.params = params or StrategyParams()
         if self.params.short_window >= self.params.long_window:
             raise ValueError("short_window must be less than long_window")
+        if self.params.min_risk_fraction > self.params.max_risk_fraction:
+            raise ValueError("min_risk_fraction must be <= max_risk_fraction")
+
+    @property
+    def _timeframe_label(self) -> str:
+        return f"intraday_{self.params.intraday_timeframe.lower()}"
+
+    def _risk_sizing(self, confidence: float, volatility: float, drawdown_from_peak: float) -> tuple[float, float]:
+        """Adaptive long-only cash sizing: higher conviction + calmer tape = larger, no leverage."""
+        volatility_ratio = volatility / max(self.params.max_volatility_pct, 1e-9)
+        volatility_scale = max(0.20, min(1.25, 1.0 / max(volatility_ratio, 0.50)))
+        drawdown_scale = max(0.25, 1.0 + min(drawdown_from_peak, 0.0))
+        confidence_scale = max(0.30, min(1.20, confidence))
+        raw_fraction = self.params.base_risk_fraction * volatility_scale * drawdown_scale * confidence_scale
+        risk_fraction = max(self.params.min_risk_fraction, min(self.params.max_risk_fraction, raw_fraction))
+        target_notional = max(0.0, self.params.account_equity * risk_fraction)
+        return round(risk_fraction, 6), round(target_notional, 4)
+
+    def _exit_signal(self, symbol: str, confidence: float, reason: str) -> Signal:
+        return Signal(
+            symbol=symbol,
+            action="SELL",
+            confidence=round(max(confidence, 0.5), 4),
+            reason=f"intraday long-only strategy: long exit only, never short; {reason}",
+            strategy_mode="intraday_long_only_no_leverage",
+            timeframe=self._timeframe_label,
+            risk_fraction=0.0,
+            target_notional=0.0,
+        )
 
     def generate_signal(self, symbol: str, bars: Sequence[Bar]) -> Signal:
-        """Generate a risk-adjusted momentum signal for watchlist rotation.
+        """Generate an intraday long-only signal with adaptive risk sizing.
 
-        The older strategy bought too easily on a simple moving-average crossover.
-        This version requires trend + momentum confirmation, penalizes unstable
-        tickers, and emits SELL signals when drawdown/volatility protection matters.
+        The engine only opens long cash positions, never shorts and never uses
+        margin. SELL means "close/reduce an existing long", not "open short".
+        Risk fraction is automatically reduced when volatility/drawdown rises and
+        increased only when trend, momentum, and price stability confirm each other.
         """
 
         if len(bars) < self.params.long_window:
@@ -52,7 +87,9 @@ class MovingAverageCrossoverStrategy:
                 symbol=symbol,
                 action="HOLD",
                 confidence=0.0,
-                reason="not enough bars for long moving average",
+                reason="intraday long-only strategy: not enough 5-minute bars for long moving average",
+                strategy_mode="intraday_long_only_no_leverage",
+                timeframe=self._timeframe_label,
             )
 
         closes = [float(bar.close) for bar in bars]
@@ -89,40 +126,50 @@ class MovingAverageCrossoverStrategy:
         )
 
         if drawdown_from_peak <= -self.params.max_drawdown_from_peak_pct:
-            return Signal(
-                symbol=symbol,
-                action="SELL",
-                confidence=round(max(confidence, 0.65), 4),
-                reason=f"risk-adjusted strategy: drawdown protection triggered; {risk_notes}",
+            return self._exit_signal(
+                symbol,
+                max(confidence, 0.65),
+                f"drawdown protection triggered; {risk_notes}",
             )
 
         if volatility > self.params.max_volatility_pct * 1.75 and recent_momentum < 0:
-            return Signal(
-                symbol=symbol,
-                action="SELL",
-                confidence=round(max(confidence, 0.55), 4),
-                reason=f"risk-adjusted strategy: volatile negative momentum; {risk_notes}",
+            return self._exit_signal(
+                symbol,
+                max(confidence, 0.55),
+                f"volatile negative momentum; {risk_notes}",
             )
 
         if raw_score >= self.params.min_buy_score and above_long_average and recent_momentum >= self.params.min_momentum_pct:
+            buy_confidence = max(confidence, 0.5)
+            risk_fraction, target_notional = self._risk_sizing(buy_confidence, volatility, drawdown_from_peak)
             return Signal(
                 symbol=symbol,
                 action="BUY",
-                confidence=round(max(confidence, 0.5), 4),
-                reason=f"risk-adjusted strategy: trend and momentum confirmed; {risk_notes}",
+                confidence=round(buy_confidence, 4),
+                reason=(
+                    "intraday long-only strategy: trend and momentum confirmed; "
+                    f"adaptive cash risk={risk_fraction:.2%}, target=${target_notional:.2f}, no leverage; {risk_notes}"
+                ),
+                strategy_mode="intraday_long_only_no_leverage",
+                timeframe=self._timeframe_label,
+                risk_fraction=risk_fraction,
+                target_notional=target_notional,
             )
 
         if raw_score <= self.params.sell_score or (crossover_pct < -self.params.min_crossover_pct and recent_momentum < 0):
-            return Signal(
-                symbol=symbol,
-                action="SELL",
-                confidence=round(max(confidence, 0.5), 4),
-                reason=f"risk-adjusted strategy: trend/momentum deterioration; {risk_notes}",
+            return self._exit_signal(
+                symbol,
+                max(confidence, 0.5),
+                f"trend/momentum deterioration; {risk_notes}",
             )
 
         return Signal(
             symbol=symbol,
             action="HOLD",
             confidence=round(min(confidence, 0.49), 4),
-            reason=f"risk-adjusted strategy: no strong risk-adjusted edge; {risk_notes}",
+            reason=f"intraday long-only strategy: no strong risk-adjusted long edge; {risk_notes}",
+            strategy_mode="intraday_long_only_no_leverage",
+            timeframe=self._timeframe_label,
+            risk_fraction=0.0,
+            target_notional=0.0,
         )

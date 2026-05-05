@@ -591,7 +591,7 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
         action_counts = Counter(signal["action"] for signal in demo_signals)
         return {
             "name": MovingAverageCrossoverStrategy.name,
-            "description": "Risk-adjusted Momentum Rotation: kauft nur starke Trend-/Momentum-Signale, sortiert Kandidaten nach Confidence und schützt das Portfolio mit Drawdown-, Volatilitäts-, Stop-Loss- und Trailing-Stop-Regeln.",
+            "description": "Intraday Long-only Adaptive Risk: handelt nur Long-Cash-Setups ohne Hebel, nutzt 5-Minuten-Signale, sortiert Kandidaten nach Confidence und reduziert den Risikoeinsatz automatisch bei hoher Volatilität, Drawdown oder schwacher Momentum-Bestätigung.",
             "params": params.__dict__,
             "latest_demo_signal": demo_signals[0] if demo_signals else None,
             "latest_demo_signals": demo_signals,

@@ -386,6 +386,12 @@ def test_dashboard_includes_visual_chart_canvases(tmp_path) -> None:
     assert "close-position-button" in response.text
     assert "/api/positions/${encodeURIComponent(symbol)}/close" in response.text
     assert "Schließt diese einzelne Position manuell" in response.text
+    assert "Intraday Long-only Strategie" in response.text
+    assert "kein Hebel" in response.text
+    assert "Basis-Risiko" in response.text
+    assert "Risiko-Korridor" in response.text
+    assert "strategy.params?.intraday_timeframe" in response.text
+    assert "signal.risk_fraction" in response.text
     assert "signedPct" in response.text
     assert "pnlClass" in response.text
     assert "refreshLivePortfolio" in response.text

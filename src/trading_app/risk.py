@@ -16,6 +16,8 @@ class RiskGuard:
         estimated_price: float,
         open_position_notional: float = 0.0,
         orders_today: int = 0,
+        available_cash: float | None = None,
+        long_position_qty: float = 0.0,
     ) -> RiskDecision:
         reasons: list[str] = []
         estimated_notional = intent.qty * (intent.limit_price or estimated_price)
@@ -25,6 +27,14 @@ class RiskGuard:
 
         if self.settings.default_symbols and intent.symbol not in self.settings.default_symbols:
             reasons.append(f"{intent.symbol} is outside DEFAULT_SYMBOLS allowlist")
+
+        if intent.side == "sell" and long_position_qty <= 0:
+            reasons.append("long-only mode blocks sell orders that would create a short position")
+
+        if intent.side == "buy" and available_cash is not None and estimated_notional > available_cash:
+            reasons.append(
+                f"cash-only no leverage: order notional {estimated_notional:.2f} exceeds available cash {available_cash:.2f}"
+            )
 
         if estimated_notional > self.settings.max_order_notional:
             reasons.append(
