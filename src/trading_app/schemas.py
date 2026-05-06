@@ -130,6 +130,16 @@ class StrategyParamsModel(BaseModel):
     max_risk_fraction: float = Field(default=0.12, ge=0.001, le=0.5)
     account_equity: float = Field(default=10_000.0, gt=0)
     intraday_timeframe: str = "5Min"
+    adam_eve_enabled: bool = True
+    adam_eve_rsi_reversal: float = Field(default=36.0, ge=1.0, le=60.0)
+    adam_eve_rsi_pullback: float = Field(default=58.0, ge=40.0, le=80.0)
+    adam_eve_volume_mult: float = Field(default=0.75, ge=0.1, le=5.0)
+    adam_eve_atr_min_pct: float = Field(default=0.001, ge=0.0, le=0.1)
+    adam_eve_atr_max_pct: float = Field(default=0.080, ge=0.001, le=0.5)
+    adam_eve_ema200_floor: float = Field(default=0.92, ge=0.5, le=1.2)
+    adam_eve_bb_reclaim: float = Field(default=0.995, ge=0.8, le=1.2)
+    adam_eve_min_drawdown_pct: float = Field(default=0.035, ge=0.0, le=0.5)
+    adam_eve_pullback_symbols: tuple[str, ...] = Field(default_factory=tuple)
 
     @model_validator(mode="after")
     def short_must_be_less_than_long(self) -> "StrategyParamsModel":

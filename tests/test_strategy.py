@@ -67,7 +67,7 @@ def test_intraday_strategy_sizes_risk_lower_when_volatility_is_high() -> None:
 
     assert stable_signal.action == "BUY"
     assert stable_signal.timeframe == "intraday_5min"
-    assert stable_signal.strategy_mode == "intraday_vwap_relative_strength_adaptive_risk"
+    assert stable_signal.strategy_mode == "stock_watchlist_adam_eve_vwap_adaptive_risk"
     assert stable_signal.risk_fraction > volatile_signal.risk_fraction
     assert stable_signal.target_notional > volatile_signal.target_notional
     assert "no leverage" in stable_signal.reason.lower()
@@ -79,7 +79,7 @@ def test_strategy_sell_signal_is_long_exit_not_short_entry() -> None:
     signal = strategy.generate_signal("MSFT", bars_from_prices([100, 110, 109, 108, 90]))
 
     assert signal.action == "SELL"
-    assert signal.strategy_mode == "intraday_vwap_relative_strength_adaptive_risk"
+    assert signal.strategy_mode == "stock_watchlist_adam_eve_vwap_adaptive_risk"
     assert signal.risk_fraction == 0.0
     assert signal.target_notional == 0.0
     assert "exit only" in signal.reason.lower()
@@ -113,7 +113,7 @@ def test_strategy_v2_buy_reason_mentions_vwap_atr_and_relative_strength() -> Non
     signal = strategy.generate_signal("MSFT", bars_from_prices([100, 100, 101, 102, 103, 104, 106, 108]))
 
     assert signal.action == "BUY"
-    assert signal.strategy_mode == "intraday_vwap_relative_strength_adaptive_risk"
+    assert signal.strategy_mode == "stock_watchlist_adam_eve_vwap_adaptive_risk"
     assert "vwap" in signal.reason.lower()
     assert "atr" in signal.reason.lower()
     assert "relative strength" in signal.reason.lower()
@@ -128,3 +128,62 @@ def test_strategy_v2_default_buy_score_ignores_weak_intraday_edges() -> None:
 
     assert signal.action == "HOLD"
     assert "no strong risk-adjusted long edge" in signal.reason.lower()
+
+
+def test_stock_watchlist_adam_eve_reversal_requires_flush_and_recovery() -> None:
+    strategy = MovingAverageCrossoverStrategy(
+        StrategyParams(
+            short_window=4,
+            long_window=12,
+            momentum_window=8,
+            volatility_window=8,
+            min_momentum_pct=0.001,
+            min_buy_score=10.0,
+            max_drawdown_from_peak_pct=0.50,
+            adam_eve_rsi_reversal=45.0,
+            adam_eve_volume_mult=0.5,
+            adam_eve_ema200_floor=0.70,
+            adam_eve_min_drawdown_pct=0.025,
+        )
+    )
+    prices = [100 + index * 0.05 for index in range(60)]
+    prices += [102, 101, 100, 99, 98, 97.5, 97, 96.5, 96, 95.5, 95, 94.5]
+    bars = bars_from_prices(prices)
+    bars[-1].open = 96.0
+    bars[-1].low = 91.5
+    bars[-1].high = 98.0
+    bars[-1].close = 96.5
+    bars[-1].volume = 400
+
+    signal = strategy.generate_signal("MSFT", bars)
+
+    assert signal.action == "BUY"
+    assert signal.strategy_mode == "stock_watchlist_adam_eve_vwap_adaptive_risk"
+    assert "adam/eve" in signal.reason.lower()
+    assert "adam_eve_reversal" in signal.reason
+    assert signal.target_notional > 0
+
+
+def test_stock_watchlist_adam_eve_filter_blocks_illiquid_reversal() -> None:
+    strategy = MovingAverageCrossoverStrategy(
+        StrategyParams(
+            short_window=4,
+            long_window=12,
+            min_buy_score=10.0,
+            adam_eve_rsi_reversal=45.0,
+            adam_eve_volume_mult=3.0,
+            adam_eve_ema200_floor=0.70,
+            adam_eve_min_drawdown_pct=0.025,
+        )
+    )
+    prices = [100 + index * 0.05 for index in range(60)] + [102, 101, 100, 99, 98, 97.5, 97, 96.5, 96, 95.5, 95, 94.5]
+    bars = bars_from_prices(prices)
+    bars[-1].open = 96.0
+    bars[-1].low = 91.5
+    bars[-1].high = 98.0
+    bars[-1].close = 96.5
+    bars[-1].volume = 100
+
+    signal = strategy.generate_signal("MSFT", bars)
+
+    assert signal.action != "BUY"

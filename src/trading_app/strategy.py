@@ -32,6 +32,60 @@ class StrategyParams:
     max_risk_fraction: float = 0.12
     account_equity: float = 10_000.0
     intraday_timeframe: str = "5Min"
+    adam_eve_enabled: bool = True
+    adam_eve_rsi_reversal: float = 36.0
+    adam_eve_rsi_pullback: float = 58.0
+    adam_eve_volume_mult: float = 0.75
+    adam_eve_atr_min_pct: float = 0.001
+    adam_eve_atr_max_pct: float = 0.080
+    adam_eve_ema200_floor: float = 0.92
+    adam_eve_bb_reclaim: float = 0.995
+    adam_eve_min_drawdown_pct: float = 0.035
+    adam_eve_pullback_symbols: tuple[str, ...] = ()
+
+
+def _ema(values: Sequence[float], period: int) -> float:
+    if not values:
+        return 0.0
+    period = max(1, min(period, len(values)))
+    multiplier = 2 / (period + 1)
+    ema = float(values[0])
+    for value in values[1:]:
+        ema = (float(value) * multiplier) + (ema * (1 - multiplier))
+    return ema
+
+
+def _rsi(values: Sequence[float], period: int) -> float:
+    if len(values) < 2:
+        return 50.0
+    deltas = [float(values[index]) - float(values[index - 1]) for index in range(1, len(values))]
+    window = deltas[-max(1, min(period, len(deltas))) :]
+    gains = [delta for delta in window if delta > 0]
+    losses = [-delta for delta in window if delta < 0]
+    avg_gain = sum(gains) / len(window) if window else 0.0
+    avg_loss = sum(losses) / len(window) if window else 0.0
+    if avg_loss == 0:
+        return 100.0 if avg_gain > 0 else 50.0
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
+
+
+def _bollinger_bands(values: Sequence[float], period: int) -> tuple[float, float, float]:
+    window = [float(value) for value in values[-max(2, min(period, len(values))) :]]
+    middle = sum(window) / len(window) if window else 0.0
+    variance = sum((value - middle) ** 2 for value in window) / max(len(window), 1)
+    std = variance**0.5
+    return middle + (2 * std), middle, middle - (2 * std)
+
+
+def _macd_hist(values: Sequence[float]) -> float:
+    if len(values) < 2:
+        return 0.0
+    macd_line = _ema(values, 12) - _ema(values, 26)
+    # Approximate the signal line from the latest MACD slope to avoid carrying state.
+    previous_macd_line = _ema(values[:-1], 12) - _ema(values[:-1], 26) if len(values) > 2 else macd_line
+    signal_line = (macd_line * (2 / 10)) + (previous_macd_line * (1 - (2 / 10)))
+    return macd_line - signal_line
 
 
 class Strategy(Protocol):
@@ -43,7 +97,7 @@ class Strategy(Protocol):
 
 
 class MovingAverageCrossoverStrategy:
-    name = "intraday_vwap_relative_strength_adaptive_risk"
+    name = "stock_watchlist_adam_eve_vwap_adaptive_risk"
 
     def __init__(self, params: StrategyParams | None = None) -> None:
         self.params = params or StrategyParams()
@@ -72,7 +126,7 @@ class MovingAverageCrossoverStrategy:
             symbol=symbol,
             action="SELL",
             confidence=round(max(confidence, 0.5), 4),
-            reason=f"intraday VWAP/relative strength strategy: long exit only, never short; {reason}",
+            reason=f"stock watchlist Adam/Eve + VWAP strategy: long exit only, never short; {reason}",
             strategy_mode=self.name,
             timeframe=self._timeframe_label,
             risk_fraction=0.0,
@@ -175,6 +229,110 @@ class MovingAverageCrossoverStrategy:
                 f"volatile negative momentum; {risk_notes}",
             )
 
+        lows = [float(bar.low) for bar in bars]
+        highs = [float(bar.high) for bar in bars]
+        opens = [float(bar.open) for bar in bars]
+        volumes = [max(float(bar.volume), 0.0) for bar in bars]
+        current_open = opens[-1]
+        current_high = highs[-1]
+        current_low = lows[-1]
+        current_close = closes[-1]
+        candle_range = max(current_high - current_low, 1e-9)
+        candle_bottom = min(current_open, current_close)
+        candle_top = max(current_open, current_close)
+        lower_wick_ratio = max(0.0, (candle_bottom - current_low) / candle_range)
+        upper_wick_ratio = max(0.0, (current_high - candle_top) / candle_range)
+        bullish_close = current_close > current_open
+        volume_window = min(30, len(volumes))
+        volume_mean = sum(volumes[-volume_window:]) / max(volume_window, 1)
+
+        ema21 = _ema(closes, 21)
+        ema55 = _ema(closes, 55)
+        ema200 = _ema(closes, min(200, len(closes)))
+        rsi14 = _rsi(closes, 14)
+        rsi_fast = _rsi(closes, 4)
+        previous_rsi_fast = _rsi(closes[:-1], 4) if len(closes) > 5 else rsi_fast
+        macd_hist = _macd_hist(closes)
+        previous_macd_hist = _macd_hist(closes[:-1]) if len(closes) > 35 else macd_hist
+        bb_upper, bb_middle, bb_lower = _bollinger_bands(closes, 20)
+        bb_width = (bb_upper - bb_lower) / max(bb_middle, 1e-9)
+        low_48_previous = min(lows[-49:-1]) if len(lows) >= 49 else min(lows[:-1] or lows)
+        high_48_previous = max(highs[-49:-1]) if len(highs) >= 49 else max(highs[:-1] or highs)
+        low_48 = min(lows[-48:])
+        high_48 = max(highs[-48:])
+        range_position = (current_close - low_48) / max(high_48 - low_48, 1e-9)
+        drawdown_12h = (current_close / max(high_48_previous, 1e-9)) - 1
+        market_drop_3h = (current_close / max(closes[-13], 1e-9) - 1) if len(closes) >= 13 else recent_momentum
+        market_pump_1h = (current_close / max(closes[-5], 1e-9) - 1) if len(closes) >= 5 else recent_momentum
+
+        adam_eve_base_filter = (
+            self.params.adam_eve_enabled
+            and volume_mean > 0
+            and volumes[-1] > volume_mean * self.params.adam_eve_volume_mult
+            and atr_pct > self.params.adam_eve_atr_min_pct
+            and atr_pct < self.params.adam_eve_atr_max_pct
+            and market_drop_3h > -0.080
+            and market_pump_1h < 0.055
+            and bb_width > 0.010
+            and ema200 > 0
+        )
+        adam_flush = (
+            current_low <= low_48_previous * 1.002
+            and drawdown_12h < -self.params.adam_eve_min_drawdown_pct
+            and lower_wick_ratio > 0.42
+            and bullish_close
+            and range_position < 0.46
+            and current_close > current_low + atr * 0.35
+        )
+        eve_recovery = (
+            current_close > bb_lower * self.params.adam_eve_bb_reclaim
+            and rsi14 < self.params.adam_eve_rsi_reversal
+            and rsi_fast >= previous_rsi_fast
+            and current_close > closes[-2] * 0.990
+            and current_close > ema200 * self.params.adam_eve_ema200_floor
+        )
+        allowed_pullback_symbols = {value.upper() for value in self.params.adam_eve_pullback_symbols}
+        quality_pullback = (
+            adam_eve_base_filter
+            and (not allowed_pullback_symbols or symbol.upper() in allowed_pullback_symbols)
+            and current_close > ema200 * 0.990
+            and ema21 > ema55 * 1.001
+            and current_low <= ema21 * 1.004
+            and current_close > ema21 * 0.990
+            and current_close > bb_middle * 0.985
+            and 42 < rsi14 < self.params.adam_eve_rsi_pullback
+            and rsi_fast >= previous_rsi_fast
+            and macd_hist >= previous_macd_hist
+            and lower_wick_ratio > 0.15
+            and 0.20 < range_position < 0.75
+            and market_drop_3h > -0.035
+        )
+        adam_eve_reversal = adam_eve_base_filter and adam_flush and eve_recovery
+
+        if adam_eve_reversal or quality_pullback:
+            setup = "adam_eve_reversal" if adam_eve_reversal else "quality_pullback"
+            setup_score = 0.0
+            if adam_eve_reversal:
+                setup_score += 0.55 + min(0.20, lower_wick_ratio * 0.20) + min(0.15, abs(drawdown_12h))
+            if quality_pullback:
+                setup_score += 0.45 + min(0.20, max(recent_momentum, 0.0) * 5) + min(0.15, max(macd_hist - previous_macd_hist, 0.0))
+            buy_confidence = max(confidence, min(0.92, setup_score))
+            risk_fraction, target_notional = self._risk_sizing(buy_confidence, volatility + atr_pct, drawdown_from_peak)
+            return Signal(
+                symbol=symbol,
+                action="BUY",
+                confidence=round(buy_confidence, 4),
+                reason=(
+                    f"stock watchlist Adam/Eve setup={setup}: volume/ATR regime, Bollinger reclaim, RSI recovery and wick quality confirmed; "
+                    f"adaptive cash risk={risk_fraction:.2%}, target=${target_notional:.2f}, no leverage; "
+                    f"rsi={rsi14:.1f}, lower_wick={lower_wick_ratio:.0%}, range_position={range_position:.0%}, bb_width={bb_width:.2%}; {risk_notes}"
+                ),
+                strategy_mode=self.name,
+                timeframe=self._timeframe_label,
+                risk_fraction=risk_fraction,
+                target_notional=target_notional,
+            )
+
         if (
             raw_score >= self.params.min_buy_score
             and above_long_average
@@ -189,7 +347,7 @@ class MovingAverageCrossoverStrategy:
                 action="BUY",
                 confidence=round(buy_confidence, 4),
                 reason=(
-                    "intraday VWAP/relative strength strategy: trend, VWAP, ATR risk and relative strength confirmed; "
+                    "stock watchlist fallback: trend, VWAP, ATR risk and relative strength confirmed; "
                     f"adaptive cash risk={risk_fraction:.2%}, target=${target_notional:.2f}, no leverage; {risk_notes}"
                 ),
                 strategy_mode=self.name,
@@ -198,7 +356,7 @@ class MovingAverageCrossoverStrategy:
                 target_notional=target_notional,
             )
 
-        if raw_score <= self.params.sell_score or (crossover_pct < -self.params.min_crossover_pct and recent_momentum < 0):
+        if raw_score <= self.params.sell_score or upper_wick_ratio > 0.55 or (crossover_pct < -self.params.min_crossover_pct and recent_momentum < 0):
             return self._exit_signal(
                 symbol,
                 max(confidence, 0.5),
@@ -210,7 +368,7 @@ class MovingAverageCrossoverStrategy:
             symbol=symbol,
             action="HOLD",
             confidence=round(min(confidence, 0.49), 4),
-            reason=f"intraday VWAP/relative strength strategy: {filter_note}no strong risk-adjusted long edge; {risk_notes}",
+            reason=f"stock watchlist Adam/Eve + VWAP strategy: {filter_note}no strong risk-adjusted long edge; {risk_notes}",
             strategy_mode=self.name,
             timeframe=self._timeframe_label,
             risk_fraction=0.0,
