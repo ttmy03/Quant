@@ -467,6 +467,8 @@ def test_dashboard_includes_visual_chart_canvases(tmp_path) -> None:
     assert "renderMonteCarlo(simulations[0]?.metrics)" not in response.text
     assert 'body: json({ symbols: latestAnalysisSymbols().slice(0, 20), seed: 42, paths: 1000, horizon_days: 252, lookback_days: 252, data_source: "auto" })' in response.text
     assert 'body: json({ symbols: latestAnalysisSymbols().slice(0, 20), days, seed: 42, initial_cash: 10000, trade_notional: 1000, data_source: dataSource, timeframe })' in response.text
+    assert "await refresh();\n          renderBacktest(result.backtest);" in response.text
+    assert "Gleichbleibende Equity wird als horizontale Linie angezeigt" in response.text
     assert "Gesamtportfolio Equity" in response.text
     assert "Gekauft/verkauft" in response.text
     assert "Watchlist Portfolio" in response.text

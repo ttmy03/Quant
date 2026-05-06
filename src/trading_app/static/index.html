@@ -1084,6 +1084,7 @@
         const maxX = Math.max(...all.map((point) => point.x));
         const minY = Math.min(...all.map((point) => point.y));
         const maxY = Math.max(...all.map((point) => point.y));
+        const isFlat = Math.abs(maxY - minY) < 0.000001;
         const yPad = Math.max((maxY - minY) * 0.08, 1);
         const xScale = (x) => padding.left + ((x - minX) / Math.max(maxX - minX, 1)) * (width - padding.left - padding.right);
         const yScale = (y) => height - padding.bottom - ((y - (minY - yPad)) / Math.max(maxY - minY + yPad * 2, 1)) * (height - padding.top - padding.bottom);
@@ -1116,6 +1117,11 @@
             ctx.fillText(item.label, x + 14, 13);
             x += 86;
           });
+        }
+        if (isFlat && options.flatLabel) {
+          ctx.fillStyle = "#647084";
+          ctx.font = "11px system-ui";
+          ctx.fillText(options.flatLabel, padding.left + 8, height - padding.bottom - 8);
         }
       }
 
@@ -1489,7 +1495,10 @@
           [
             { color: "#0f766e", width: 2.5, points: curve.map((point, index) => ({ x: index, y: point.equity })) },
           ],
-          { legend: [{ label: "Gesamtportfolio Equity", color: "#0f766e" }] },
+          {
+            legend: [{ label: "Gesamtportfolio Equity", color: "#0f766e" }],
+            flatLabel: "Gleichbleibende Equity wird als horizontale Linie angezeigt",
+          },
         );
         renderStatusList("#backtest-equity", [
           ["Symbol", backtest.symbol === "WATCHLIST_PORTFOLIO" ? "Watchlist Portfolio" : backtest.symbol],
@@ -1757,6 +1766,7 @@
           });
           renderBacktest(result.backtest);
           await refresh();
+          renderBacktest(result.backtest);
         }),
       );
       document.querySelector("#order-form").addEventListener("submit", (event) => {
