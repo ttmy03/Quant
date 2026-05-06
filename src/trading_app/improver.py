@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from typing import Sequence
 
 import numpy as np
@@ -37,21 +37,24 @@ class RecursiveImprover:
             for long_delta in (-5, -2, 2, 5):
                 long_window = max(short_window + 1, base.long_window + long_delta)
                 candidates.add(
-                    StrategyParams(
+                    replace(
+                        base,
                         short_window=short_window,
                         long_window=long_window,
                         min_crossover_pct=base.min_crossover_pct,
                     )
                 )
         candidates.add(
-            StrategyParams(
+            replace(
+                base,
                 short_window=base.short_window,
                 long_window=base.long_window,
                 min_crossover_pct=max(0.0, base.min_crossover_pct / 2),
             )
         )
         candidates.add(
-            StrategyParams(
+            replace(
+                base,
                 short_window=base.short_window,
                 long_window=base.long_window,
                 min_crossover_pct=min(0.2, base.min_crossover_pct * 2),

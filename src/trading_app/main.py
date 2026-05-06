@@ -591,7 +591,7 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
         action_counts = Counter(signal["action"] for signal in demo_signals)
         return {
             "name": MovingAverageCrossoverStrategy.name,
-            "description": "Intraday VWAP + Relative Strength Adaptive Risk V2: handelt nur Long-Cash-Setups ohne Hebel, nutzt 5-Minuten-Signale, VWAP-/Trend-/Momentum-/Relative-Strength-Filter, ATR-basiertes Risiko und reduziert den Einsatz automatisch bei hoher Volatilität oder Drawdown.",
+            "description": "Stock Watchlist Adam/Eve + VWAP Adaptive Risk: handelt nur Long-Cash-Setups ohne Hebel, nutzt 5-Minuten-Signale, Adam/Eve-Flush-Recovery-Setups, Bollinger-Reclaims, Volumen-/ATR-Filter, VWAP-/Trend-/Relative-Strength-Fallbacks und reduziert den Einsatz automatisch bei hoher Volatilität oder Drawdown.",
             "params": params.__dict__,
             "latest_demo_signal": demo_signals[0] if demo_signals else None,
             "latest_demo_signals": demo_signals,

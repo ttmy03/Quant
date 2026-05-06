@@ -187,3 +187,25 @@ def test_stock_watchlist_adam_eve_filter_blocks_illiquid_reversal() -> None:
     signal = strategy.generate_signal("MSFT", bars)
 
     assert signal.action != "BUY"
+
+
+def test_recursive_improver_preserves_adam_eve_parameters_when_proposing_candidates() -> None:
+    from trading_app.config import Settings
+    from trading_app.improver import RecursiveImprover
+
+    base = StrategyParams(
+        short_window=8,
+        long_window=30,
+        adam_eve_enabled=False,
+        adam_eve_rsi_reversal=44.0,
+        adam_eve_volume_mult=1.25,
+        adam_eve_pullback_symbols=("MSFT", "NVDA"),
+    )
+
+    candidates = RecursiveImprover(Settings(auth_enabled=False)).propose_candidates(base)
+
+    assert candidates
+    assert all(candidate.adam_eve_enabled is False for candidate in candidates)
+    assert all(candidate.adam_eve_rsi_reversal == 44.0 for candidate in candidates)
+    assert all(candidate.adam_eve_volume_mult == 1.25 for candidate in candidates)
+    assert all(candidate.adam_eve_pullback_symbols == ("MSFT", "NVDA") for candidate in candidates)
