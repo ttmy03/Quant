@@ -54,6 +54,23 @@ def _long_exit_levels(entry: float, peak: float, prior_bars: Sequence[Bar], para
     return stop_price, trailing_stop_price, take_profit_price
 
 
+def _should_defer_profit_runner_signal_exit(entry: float, current_price: float, params: StrategyParams) -> bool:
+    """Keep small winners open so runner trades can reach larger ATR/R targets.
+
+    This only defers strategy-generated SELL signals for already-profitable
+    positions. Losing exits, stop-losses, trailing stops and configured
+    take-profit levels are never blocked by this helper.
+    """
+    if not params.profit_runner_enabled:
+        return False
+    entry = float(entry)
+    current_price = float(current_price)
+    if entry <= 0 or current_price <= 0:
+        return False
+    unrealized_return = (current_price / entry) - 1
+    return 0 < unrealized_return < params.profit_runner_min_signal_exit_profit_pct
+
+
 def _trade_quality_metrics(trades: Sequence[BacktestTrade]) -> dict[str, object]:
     open_notional: dict[str, float] = {}
     winners: list[float] = []
@@ -99,6 +116,7 @@ def run_backtest(
     cash = float(initial_cash)
     position_qty = 0.0
     entry_notional = 0.0
+    entry_price = 0.0
     winning_round_trips = 0
     closed_round_trips = 0
     trades: list[BacktestTrade] = []
@@ -120,6 +138,7 @@ def run_backtest(
             cash -= notional
             position_qty = qty
             entry_notional = notional
+            entry_price = price
             trades.append(
                 BacktestTrade(
                     timestamp=bar.timestamp,
@@ -132,6 +151,18 @@ def run_backtest(
                 )
             )
         elif price > 0 and last_signal.action == "SELL" and position_qty > 0:
+            if _should_defer_profit_runner_signal_exit(entry_price, price, params):
+                equity = cash + (position_qty * max(price, 0.0))
+                equity_curve.append(
+                    BacktestEquityPoint(
+                        timestamp=bar.timestamp,
+                        equity=round(equity, 4),
+                        cash=round(cash, 4),
+                        position_qty=round(position_qty, 8),
+                        close=round(price, 4),
+                    )
+                )
+                continue
             qty = position_qty
             notional = qty * price
             cash += notional
@@ -140,6 +171,7 @@ def run_backtest(
             if notional > entry_notional:
                 winning_round_trips += 1
             entry_notional = 0.0
+            entry_price = 0.0
             trades.append(
                 BacktestTrade(
                     timestamp=bar.timestamp,
@@ -333,6 +365,8 @@ def run_portfolio_backtest(
                     latest_price[symbol] = take_profit_price
                     continue
                 if signal.action == "SELL":
+                    if _should_defer_profit_runner_signal_exit(entry, price, params):
+                        continue
                     close_position(symbol, bar, signal.reason)
                     continue
 

@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
-from trading_app.backtest import run_backtest, run_portfolio_backtest
+from trading_app.backtest import _should_defer_profit_runner_signal_exit, run_backtest, run_portfolio_backtest
 from trading_app.schemas import Bar
 from trading_app.storage import Storage
 from trading_app.strategy import StrategyParams
@@ -240,3 +240,25 @@ def test_portfolio_backtest_takes_profit_at_configured_r_multiple() -> None:
     assert sell_trades[-1].price > result.trades[0].price
     assert result.metrics.profit_factor is not None
     assert result.metrics.profit_factor > 0
+
+
+def test_profit_runner_defaults_let_winners_run_longer_than_old_scalp_target() -> None:
+    params = StrategyParams()
+
+    assert params.profit_runner_enabled is True
+    assert params.take_profit_r_multiple >= 3.0
+    assert params.atr_trailing_multiplier >= 2.5
+    assert params.trailing_stop_pct >= 0.14
+
+
+def test_profit_runner_defers_small_profitable_signal_exit_but_keeps_loss_exit() -> None:
+    params = StrategyParams(profit_runner_enabled=True, profit_runner_min_signal_exit_profit_pct=0.015)
+
+    assert _should_defer_profit_runner_signal_exit(100.0, 101.0, params) is True
+    assert _should_defer_profit_runner_signal_exit(100.0, 102.0, params) is False
+    assert _should_defer_profit_runner_signal_exit(100.0, 99.0, params) is False
+    assert _should_defer_profit_runner_signal_exit(
+        100.0,
+        101.0,
+        StrategyParams(profit_runner_enabled=False, profit_runner_min_signal_exit_profit_pct=0.015),
+    ) is False

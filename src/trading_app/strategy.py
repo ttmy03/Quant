@@ -20,12 +20,14 @@ class StrategyParams:
     sell_score: float = -0.35
     max_positions: int = 5
     stop_loss_pct: float = 0.08
-    trailing_stop_pct: float = 0.12
+    trailing_stop_pct: float = 0.16
     vwap_window: int = 20
     atr_period: int = 14
     atr_stop_multiplier: float = 1.5
-    atr_trailing_multiplier: float = 2.0
-    take_profit_r_multiple: float = 2.0
+    atr_trailing_multiplier: float = 2.8
+    take_profit_r_multiple: float = 3.2
+    profit_runner_enabled: bool = True
+    profit_runner_min_signal_exit_profit_pct: float = 0.015
     min_relative_strength_pct: float = 0.0
     base_risk_fraction: float = 0.06
     min_risk_fraction: float = 0.01
