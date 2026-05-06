@@ -376,6 +376,9 @@ def test_dashboard_includes_visual_chart_canvases(tmp_path) -> None:
     assert "pickLatestWatchlistBacktest" in response.text
     assert "pickLatestWatchlistSimulation" in response.text
     assert "latestAnalysisSymbols" in response.text
+    assert "latestWatchlistSymbols.length ? latestWatchlistSymbols : latestUniverseSymbols" in response.text
+    assert "gerankte Watchlist-Symbole" in response.text
+    assert "Top 20 Analyse" in response.text
     assert "universe_symbols" in response.text
     assert "Backtest ID" in response.text
     assert "Berechnet" in response.text

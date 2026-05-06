@@ -988,7 +988,7 @@
       let latestWatchlistSymbols = [];
       let latestUniverseSymbols = [];
       const primaryWatchlistSymbol = () => latestWatchlistSymbols[0] || latestUniverseSymbols[0] || "MSFT";
-      const latestAnalysisSymbols = () => (latestUniverseSymbols.length ? latestUniverseSymbols : latestWatchlistSymbols);
+      const latestAnalysisSymbols = () => (latestWatchlistSymbols.length ? latestWatchlistSymbols : latestUniverseSymbols);
       const money = (value) => (Number.isFinite(Number(value)) ? Number(value).toFixed(2) : "-");
       const pct = (value) => (Number.isFinite(Number(value)) ? `${(Number(value) * 100).toFixed(2)}%` : "-");
       const signedPct = (value) => {
@@ -1564,7 +1564,7 @@
           ["Alpaca", config.alpaca_configured ? badge("Konfiguriert", "ok") : badge("Fallback", "warn")],
           ["Max Order", money(config.max_order_notional)],
           ["Max Tagesorders", config.max_daily_orders],
-          ["Symbole", (config.default_symbols || []).join(", ") || "-"],
+          ["Symbole", watchlist?.symbols?.length ? `${watchlist.symbols.length} gerankte Watchlist-Symbole · Top 20 Analyse: ${watchlist.symbols.slice(0, 20).join(", ")}` : ((config.default_symbols || []).join(", ") || "-")],
         ]);
         renderStatusList("#strategy", [
           ["Name", strategy.name],

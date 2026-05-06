@@ -584,8 +584,10 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
     def strategy() -> dict[str, object]:
         params = app.state.strategy_params
         strategy_engine = MovingAverageCrossoverStrategy(params)
+        watchlist_payload = build_dynamic_halal_watchlist(AlpacaClient(settings), limit=20)
+        demo_symbols = tuple(watchlist_payload.get("symbols") or settings.default_symbols[:20] or ("MSFT",))
         demo_signals = []
-        for index, symbol in enumerate(settings.default_symbols[:20] or ("MSFT",)):
+        for index, symbol in enumerate(demo_symbols):
             bars = generate_synthetic_bars(symbol=symbol, seed=42 + index)
             demo_signals.append(strategy_engine.generate_signal(symbol, bars).model_dump())
         action_counts = Counter(signal["action"] for signal in demo_signals)
@@ -597,6 +599,8 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
             "latest_demo_signals": demo_signals,
             "action_counts": dict(action_counts),
             "strategy_scope": "multi_symbol_watchlist",
+            "demo_symbols_source": "top_ranked_watchlist",
+            "demo_symbols": list(demo_symbols),
         }
 
     @app.put("/api/strategy")
