@@ -1,4 +1,7 @@
+import time
+
 from trading_app.config import Settings
+from trading_app.data import generate_synthetic_bars
 from trading_app.main import create_app
 from trading_app.storage import Storage
 from tests.asgi_client import ASGITestClient
@@ -230,6 +233,82 @@ def test_backtest_endpoint_reports_alpaca_fallback_when_requested_without_creden
     assert payload["backtest"]["inputs"]["data_source"] == "alpaca"
     assert payload["backtest"]["inputs"]["resolved_data_source"] == "synthetic_fallback"
 
+
+def test_backtest_endpoint_fetches_external_watchlist_symbols_concurrently(tmp_path, monkeypatch) -> None:
+    class SlowEmptyAlpacaClient:
+        def __init__(self, settings):
+            self.settings = settings
+
+        def historical_bars(self, symbol: str, *, days: int, timeframe: str = "1Day"):
+            time.sleep(0.05)
+            return []
+
+    settings = Settings(
+        DATABASE_PATH=tmp_path / "test.sqlite3",
+        AUTH_ENABLED=False,
+        ALPACA_API_KEY="key",
+        ALPACA_SECRET_KEY="secret",
+        _env_file=None,
+    )
+    monkeypatch.setattr("trading_app.main.AlpacaClient", SlowEmptyAlpacaClient)
+    app = create_app(settings=settings, storage=Storage(settings.database_path))
+
+    start = time.perf_counter()
+    with ASGITestClient(app) as client:
+        response = client.post(
+            "/api/backtests/run",
+            json={
+                "symbols": ["AAA", "BBB", "CCC", "DDD", "EEE", "FFF"],
+                "days": 40,
+                "seed": 42,
+                "data_source": "alpaca",
+            },
+        )
+    elapsed = time.perf_counter() - start
+
+    assert response.status_code == 200
+    assert elapsed < 0.20
+    assert response.json()["backtest"]["metrics"]["symbols_count"] == 6
+    assert response.json()["data_source"] == "synthetic_fallback"
+
+
+def test_backtest_endpoint_caps_large_intraday_alpaca_payloads(tmp_path, monkeypatch) -> None:
+    class BigIntradayAlpacaClient:
+        def __init__(self, settings):
+            self.settings = settings
+
+        def historical_bars(self, symbol: str, *, days: int, timeframe: str = "1Day"):
+            assert timeframe == "5Min"
+            return generate_synthetic_bars(symbol=symbol, days=1_000, seed=sum(ord(char) for char in symbol))
+
+    settings = Settings(
+        DATABASE_PATH=tmp_path / "test.sqlite3",
+        AUTH_ENABLED=False,
+        ALPACA_API_KEY="key",
+        ALPACA_SECRET_KEY="secret",
+        _env_file=None,
+    )
+    monkeypatch.setattr("trading_app.main.AlpacaClient", BigIntradayAlpacaClient)
+    app = create_app(settings=settings, storage=Storage(settings.database_path))
+
+    with ASGITestClient(app) as client:
+        response = client.post(
+            "/api/backtests/run",
+            json={
+                "symbols": ["AAA", "BBB", "CCC"],
+                "days": 40,
+                "seed": 42,
+                "data_source": "alpaca",
+                "timeframe": "5Min",
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data_source"] == "alpaca"
+    assert payload["bars_count"] == 40
+    assert payload["backtest"]["inputs"]["bars_per_symbol"] == {"AAA": 40, "BBB": 40, "CCC": 40}
+    assert len(payload["backtest"]["equity_curve"]) == 40
 
 def test_monte_carlo_endpoint_returns_visualization_series(tmp_path) -> None:
     settings = Settings(

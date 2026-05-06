@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import AsyncIterator
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from html import escape
@@ -758,6 +759,10 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
             except Exception as exc:  # noqa: BLE001 - external market-data failure should not break research mode
                 fallback_reason = f"Alpaca historical data unavailable: {exc}"
         if bars:
+            # Alpaca intraday requests can return thousands of bars per symbol.
+            # Keep the endpoint bounded to the requested number of candles so a
+            # 20-symbol dashboard backtest cannot turn into 200k signal passes.
+            bars = bars[-request.days :]
             data_source = "alpaca"
         else:
             bars = generate_synthetic_bars(symbol=symbol, days=request.days, seed=seed)
@@ -781,10 +786,20 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
         )
         requested_symbols = request.symbols or [request.symbol]
         requested_symbols = [symbol.upper() for symbol in requested_symbols][:20]
-        symbol_payloads = [
-            _bars_for_backtest_symbol(request, symbol, request.seed + index)
-            for index, symbol in enumerate(requested_symbols)
-        ]
+        # Fetch external historical data concurrently for watchlist backtests.
+        # The dashboard runs up to 20 ranked symbols; doing those Alpaca calls
+        # serially can make the request look like it hangs even though the
+        # backtest itself is finite. Synthetic generation stays deterministic
+        # because each symbol still gets its stable seed offset.
+        indexed_symbols = list(enumerate(requested_symbols))
+        max_workers = min(8, len(indexed_symbols)) or 1
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            symbol_payloads = list(
+                executor.map(
+                    lambda item: _bars_for_backtest_symbol(request, item[1], request.seed + item[0]),
+                    indexed_symbols,
+                )
+            )
         bars_by_symbol = {str(payload["symbol"]): payload["bars"] for payload in symbol_payloads}
         data_sources = {str(payload["data_source"]) for payload in symbol_payloads}
         data_source = "mixed" if len(data_sources) > 1 else next(iter(data_sources), "synthetic")
