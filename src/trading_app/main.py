@@ -305,7 +305,7 @@ def create_app(settings: Settings | None = None, storage: Storage | None = None)
         return AlpacaClient(settings).positions()
 
     @app.get("/api/watchlist")
-    def watchlist(limit: Annotated[int, Query(ge=1, le=20)] = 20) -> dict[str, object]:
+    def watchlist(limit: Annotated[int, Query(ge=1, le=300)] = 250) -> dict[str, object]:
         return build_dynamic_halal_watchlist(AlpacaClient(settings), limit=limit)
 
     @app.get("/api/trading-control")

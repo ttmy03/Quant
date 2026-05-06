@@ -29,7 +29,7 @@ class DryRunSchedulerService:
         if request.symbols:
             symbols = [symbol.upper() for symbol in request.symbols]
         else:
-            watchlist_payload = build_dynamic_halal_watchlist(client, limit=20)
+            watchlist_payload = build_dynamic_halal_watchlist(client, limit=250)
             symbols = [symbol.upper() for symbol in watchlist_payload["symbols"]]
             if not symbols:
                 symbols = list(self.settings.default_symbols)

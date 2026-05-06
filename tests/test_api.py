@@ -321,19 +321,19 @@ def test_watchlist_endpoint_returns_dynamic_halal_msci_world_large_cap_candidate
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["count"] == 20
-    assert len(payload["symbols"]) == 20
-    assert payload["universe_count"] == 20
-    assert len(payload["universe_symbols"]) == 20
+    assert payload["count"] == 250
+    assert len(payload["symbols"]) == 250
+    assert 200 <= payload["universe_count"] <= 300
+    assert len(payload["universe_symbols"]) == payload["universe_count"]
     assert payload["eligible_symbols"] == payload["symbols"]
-    assert payload["methodology"]["universe"] == "20 qualitatively screened halal MSCI World large-cap candidates"
-    assert payload["methodology"]["index_reference"] == "MSCI World developed-market large caps"
+    assert payload["methodology"]["universe"] == "279 qualitatively screened MSCI World-style halal large-cap research candidates; default watchlist returns top 250"
+    assert payload["methodology"]["index_reference"] == "MSCI World developed-market large caps / MSCI Islamic-style sector screen"
     assert payload["candidates"][0]["rank"] == 1
     assert all(candidate["halal_screen"] == "candidate_only_qualitative_pass" for candidate in payload["candidates"])
     assert all(candidate["market_cap_category"] == "largecap" for candidate in payload["candidates"])
     assert all(candidate["undervalued"] is True for candidate in payload["candidates"])
     assert all(candidate["margin_of_safety"] > 0 for candidate in payload["candidates"])
-    assert {"Technology", "Healthcare", "Industrials", "Materials", "Consumer"}.issubset({candidate["sector"] for candidate in payload["candidates"]})
+    assert {"Technology", "Healthcare", "Industrials", "Materials", "Consumer", "Consumer Staples"}.issubset({candidate["sector"] for candidate in payload["candidates"]})
     assert {"MSFT", "NVDA", "ASML", "LLY", "NVO", "LIN", "CAT", "TM"}.issubset(set(payload["symbols"]))
     assert payload["symbols"] == [candidate["symbol"] for candidate in payload["candidates"]]
 
@@ -369,6 +369,7 @@ def test_dashboard_includes_visual_chart_canvases(tmp_path) -> None:
     assert 'id="refresh-watchlist"' in response.text
     assert "Dynamische Halal Large-Cap Watchlist" in response.text
     assert "MSCI World" in response.text
+    assert "250 ausgewählte" in response.text
     assert 'api("/api/watchlist")' in response.text
     assert "renderWatchlist" in response.text
     assert "primaryWatchlistSymbol" in response.text
